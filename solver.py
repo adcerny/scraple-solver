@@ -47,7 +47,8 @@ def load_dictionary():
 
 def run_solver():
     parser = argparse.ArgumentParser(description="ScrapleSolver")
-    parser.add_argument('--beam-width', type=int, default=5, help='Beam width for the search (default: 5)')
+    parser.add_argument('--beam-width', type=int, default=10, help='Beam width for the search (default: 10)')
+    parser.add_argument('--depth', type=int, default=20, help='Maximum number of moves to search (default: 20)')
     parser.add_argument('--verbose', action='store_true', help='Enable verbose logging')
     args = parser.parse_args()
 
@@ -55,13 +56,17 @@ def run_solver():
     utils.VERBOSE = args.verbose
 
     board, rack = fetch_board_and_rack()
+    print("Today's Board:")
+    print_board(board)
+    print("Rack:", ' '.join(rack))
     original_bonus = [row[:] for row in board]
     words, wordset = load_dictionary()
 
     beam_width = args.beam_width
-    log_with_time(f"Evaluating full {beam_width} beam width search...")
+    max_moves = args.depth
+    log_with_time(f"Evaluating full {beam_width} beam width search with max depth {max_moves}...")
     best_total, best_results = parallel_first_beam(
-        board, rack, words, wordset, original_bonus, beam_width=beam_width
+        board, rack, words, wordset, original_bonus, beam_width=beam_width, max_moves=max_moves
     )
 
     if not best_results:
@@ -69,8 +74,16 @@ def run_solver():
         return
 
     log_with_time(f"Found {len(best_results)} highest scoring solution(s) with score {best_total}:")
+    seen_boards = set()
+    unique_count = 0
     for idx, (score, best_board, best_moves) in enumerate(best_results, 1):
-        log_with_time(f"Solution {idx}:")
+        # Serialize the board as a tuple of tuples for uniqueness
+        board_key = tuple(tuple(row) for row in best_board)
+        if board_key in seen_boards:
+            continue  # Skip duplicate board layouts
+        seen_boards.add(board_key)
+        unique_count += 1
+        log_with_time(f"Solution {unique_count}:")
         log_with_time("Move sequence:")
         for move in best_moves:
             sc, w, d, r0, c0 = move

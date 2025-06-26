@@ -151,7 +151,7 @@ def full_beam_search(board, rack_count, words, wordset, placed, original_bonus, 
         move_num += 1
     return best_score, best_board, best_moves
 
-def beam_from_first(play, board, rack_count, words, wordset, original_bonus, beam_width):
+def beam_from_first(play, board, rack_count, words, wordset, original_bonus, beam_width, max_moves=20):
     play_word = play[1]
     words_for_sim = [w for w in words if w != play_word]
     board_copy = [row[:] for row in board]
@@ -162,11 +162,11 @@ def beam_from_first(play, board, rack_count, words, wordset, original_bonus, bea
     place_word(board_copy, play_word, play[3], play[4], play[2])
     placed_copy = {(r, c) for r in range(N) for c in range(N) if is_letter(board_copy[r][c])}
     score, final_board, moves = full_beam_search(
-        board_copy, rack_after_first, words_for_sim, wordset, placed_copy, original_bonus, beam_width=beam_width
+        board_copy, rack_after_first, words_for_sim, wordset, placed_copy, original_bonus, beam_width=beam_width, max_moves=max_moves
     )
     return (score, final_board, [(play[0], play_word, play[2], play[3], play[4])] + (moves if moves else []))
 
-def parallel_first_beam(board, rack, words, wordset, original_bonus, beam_width=5):
+def parallel_first_beam(board, rack, words, wordset, original_bonus, beam_width=5, max_moves=20):
     rack_count = Counter(rack)
     placed = set()
     t0 = time.time()
@@ -188,7 +188,7 @@ def parallel_first_beam(board, rack, words, wordset, original_bonus, beam_width=
     with concurrent.futures.ProcessPoolExecutor() as executor:
         future_to_start = {
             executor.submit(
-                beam_from_first, play, board, rack_count, pruned_words, wordset, original_bonus, beam_width
+                beam_from_first, play, board, rack_count, pruned_words, wordset, original_bonus, beam_width, max_moves
             ): time.time()
             for play in first_choices
         }
