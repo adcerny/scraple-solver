@@ -90,7 +90,7 @@ def run_solver():
             log_with_time(f"  {w} at ({r0},{c0}) {d} scoring {sc}")
         log_with_time("Final simulated board:")
         print_board(best_board)
-        print(f"True board score: {compute_board_score(best_board, original_bonus)}")
+        print(f"Final board score: {compute_board_score(best_board, original_bonus)}")
         print("-" * 40)
 
     total_elapsed = time.time() - utils.start_time

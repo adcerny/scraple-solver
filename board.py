@@ -21,7 +21,7 @@ def print_board(board):
             elif is_letter(cell):
                 line.append(Fore.GREEN + f' {cell}' + Style.RESET_ALL)
             else:
-                line.append('..')
+                line.append(Style.DIM + '··' + Style.RESET_ALL)
         print(' '.join(line))
     print()
 

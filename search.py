@@ -197,7 +197,9 @@ def parallel_first_beam(board, rack, words, wordset, original_bonus, beam_width=
             score, board_result, moves = future.result()
             elapsed = time.time() - start
             _, word, direction, row, col = first_choices[i]
-            log_with_time(f"Move {i+1}/{len(first_choices)}: {word} at ({row},{col}) {direction} → projected score: {score} (duration: {elapsed:.3f}s)")
+            color = "\033[92m" if score == max(r[0] for r in results + [(score, None, None)]) else "\033[94m"
+            reset = "\033[0m"
+            log_with_time(f"{color}Move {i+1}/{len(first_choices)}: {word} at ({row},{col}) {direction} → final score: {score} (duration: {elapsed:.3f}s){reset}")
             vlog(f"beam_from_first {i+1}", start)
             if moves is not None:
                 results.append((score, board_result, moves))
