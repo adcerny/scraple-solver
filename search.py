@@ -4,14 +4,14 @@ from collections import Counter
 import concurrent.futures
 import time
 from utils import log_with_time, vlog, N
-from board import is_letter, board_valid, place_word, compute_board_score
+from board import board_valid, place_word, compute_board_score
 
 def can_play_word_on_board(word, r0, c0, d, board, rack):
     rack = rack.copy()
     for i, ch in enumerate(word):
         r = r0 + (i if d == 'V' else 0)
         c = c0 + (i if d == 'H' else 0)
-        if not is_letter(board[r][c]):
+        if not (len(board[r][c]) == 1):
             if rack[ch] > 0:
                 rack[ch] -= 1
             else:
@@ -22,17 +22,17 @@ def get_perpendicular_coords(temp, r, c, direction):
     coords = [(r, c)]
     if direction == 'H':
         i = r - 1
-        while i >= 0 and is_letter(temp[i][c]):
+        while i >= 0 and len(temp[i][c]) == 1:
             coords.insert(0, (i, c)); i -= 1
         i = r + 1
-        while i < N and is_letter(temp[i][c]):
+        while i < N and len(temp[i][c]) == 1:
             coords.append((i, c)); i += 1
     else:
         j = c - 1
-        while j >= 0 and is_letter(temp[r][j]):
+        while j >= 0 and len(temp[r][j]) == 1:
             coords.insert(0, (r, j)); j -= 1
         j = c + 1
-        while j < N and is_letter(temp[r][j]):
+        while j < N and len(temp[r][j]) == 1:
             coords.append((r, j)); j += 1
     return coords if len(coords) > 1 else []
 
@@ -43,7 +43,7 @@ def is_valid_placement(w, board, rack_count, wordset, r0, c0, d):
         c = c0 + (i if d == 'H' else 0)
         if not (0 <= r < N and 0 <= c < N): return False
         cell = board[r][c]
-        if is_letter(cell):
+        if len(cell) == 1:
             if cell != ch: return False
         else:
             needed[ch] += 1
@@ -52,7 +52,7 @@ def is_valid_placement(w, board, rack_count, wordset, r0, c0, d):
     temp = [row[:] for row in board]
     for i, ch in enumerate(w):
         r = r0 + (i if d == 'V' else 0); c = c0 + (i if d == 'H' else 0)
-        if not is_letter(temp[r][c]): temp[r][c] = ch
+        if not (len(temp[r][c]) == 1): temp[r][c] = ch
     for i, ch in enumerate(w):
         r = r0 + (i if d == 'V' else 0); c = c0 + (i if d == 'H' else 0)
         coords = get_perpendicular_coords(temp, r, c, d)
@@ -63,7 +63,7 @@ def is_valid_placement(w, board, rack_count, wordset, r0, c0, d):
 
 def prune_words(words, rack_count, board):
     t0 = time.time()
-    board_letters = Counter(cell for row in board for cell in row if is_letter(cell))
+    board_letters = Counter(cell for row in board for cell in row if len(cell) == 1)
     rack_plus_board = rack_count + board_letters
     pruned = []
     for w in words:
@@ -73,11 +73,63 @@ def prune_words(words, rack_count, board):
     vlog(f"prune_words: reduced from {len(words)} to {len(pruned)}", t0)
     return pruned
 
-def find_best(board, rack_count, words, wordset, touch=None, original_bonus=None):
+def validate_new_words(board, wordset, w, r0, c0, d):
+    # Check the main word
+    main_word = []
+    if d == 'H':
+        c_start = c0
+        while c_start > 0 and len(board[r0][c_start-1]) == 1:
+            c_start -= 1
+        c_end = c0 + len(w)
+        while c_end < N and len(board[r0][c_end]) == 1:
+            c_end += 1
+        main_word = ''.join(board[r0][c] for c in range(c_start, c_end))
+    else:
+        r_start = r0
+        while r_start > 0 and len(board[r_start-1][c0]) == 1:
+            r_start -= 1
+        r_end = r0 + len(w)
+        while r_end < N and len(board[r_end][c0]) == 1:
+            r_end += 1
+        main_word = ''.join(board[r][c0] for r in range(r_start, r_end))
+    if len(main_word) > 1 and main_word not in wordset:
+        return False
+    # Check all perpendicular words formed by new tiles
+    for i, ch in enumerate(w):
+        r = r0 + (i if d == 'V' else 0)
+        c = c0 + (i if d == 'H' else 0)
+        if len(board[r][c]) != 1:  # Only check for new tiles placed
+            continue
+        # Build perpendicular word
+        if d == 'H':
+            r_start = r
+            while r_start > 0 and len(board[r_start-1][c]) == 1:
+                r_start -= 1
+            r_end = r + 1
+            while r_end < N and len(board[r_end][c]) == 1:
+                r_end += 1
+            if r_end - r_start > 1:
+                perp_word = ''.join(board[rr][c] for rr in range(r_start, r_end))
+                if perp_word not in wordset:
+                    return False
+        else:
+            c_start = c
+            while c_start > 0 and len(board[r][c_start-1]) == 1:
+                c_start -= 1
+            c_end = c + 1
+            while c_end < N and len(board[r][c_end]) == 1:
+                c_end += 1
+            if c_end - c_start > 1:
+                perp_word = ''.join(board[r][cc] for cc in range(c_start, c_end))
+                if perp_word not in wordset:
+                    return False
+    return True
+
+def find_best(board, rack_count, words, wordset, touch=None, original_bonus=None, top_k=10):
     t0 = time.time()
-    best = (float('-inf'), None, None, None, None)
     base_score = compute_board_score(board, original_bonus)
     checked = 0
+    candidates = []
     for w in words:
         L = len(w)
         for r in range(N):
@@ -90,9 +142,10 @@ def find_best(board, rack_count, words, wordset, touch=None, original_bonus=None
                 can_play, _ = can_play_word_on_board(w, r, c, 'H', board_copy, rack_copy)
                 if not can_play: continue
                 place_word(board_copy, w, r, c, 'H')
-                if not board_valid(board_copy, wordset): continue
-                move_score = compute_board_score(board_copy, original_bonus) - base_score
-                if move_score > best[0]: best = (move_score, w, 'H', r, c)
+                if not validate_new_words(board_copy, wordset, w, r, c, 'H'): continue
+                move_score = compute_board_score(board_copy, original_bonus)
+                bonus_count = sum(1 for i in range(L) if board[r][c+i] in {'DL','TL','DW','TW'})
+                candidates.append((move_score, bonus_count, L, w, 'H', r, c))
                 checked += 1
         for r in range(N-L+1):
             for c in range(N):
@@ -104,12 +157,19 @@ def find_best(board, rack_count, words, wordset, touch=None, original_bonus=None
                 can_play, _ = can_play_word_on_board(w, r, c, 'V', board_copy, rack_copy)
                 if not can_play: continue
                 place_word(board_copy, w, r, c, 'V')
-                if not board_valid(board_copy, wordset): continue
-                move_score = compute_board_score(board_copy, original_bonus) - base_score
-                if move_score > best[0]: best = (move_score, w, 'V', r, c)
+                if not validate_new_words(board_copy, wordset, w, r, c, 'V'): continue
+                move_score = compute_board_score(board_copy, original_bonus)
+                bonus_count = sum(1 for i in range(L) if board[r+i][c] in {'DL','TL','DW','TW'})
+                candidates.append((move_score, bonus_count, L, w, 'V', r, c))
                 checked += 1
-    vlog(f"find_best checked {checked} placements for {len(words)} words", t0)
-    return best
+    # Sort by move_score, then bonus_count, then word length (descending)
+    candidates.sort(reverse=True)
+    vlog(f"find_best checked {checked} placements for {len(words)} words, returning top {top_k}", t0)
+    # Early pruning: only return the top_k best candidates
+    if candidates:
+        best = candidates[0]
+        return (best[0], best[3], best[4], best[5], best[6])
+    return (float('-inf'), None, None, None, None)
 
 def full_beam_search(board, rack_count, words, wordset, placed, original_bonus, beam_width=5, max_moves=20):
     state = [(0, board, rack_count, set(placed), [], words)]
@@ -135,10 +195,10 @@ def full_beam_search(board, rack_count, words, wordset, placed, original_bonus, 
                     continue
                 b2 = [row[:] for row in b]
                 place_word(b2, w, r0, c0, d)
-                if not board_valid(b2, wordset):
+                if not validate_new_words(b2, wordset, w, r0, c0, d):
                     temp_words = [x for x in temp_words if x != w]
                     continue
-                pl2 = {(r, c) for r in range(N) for c in range(N) if is_letter(b2[r][c])}
+                pl2 = {(r, c) for r in range(N) for c in range(N) if len(b2[r][c]) == 1}
                 next_words = [x for x in temp_words if x != w]
                 next_state.append((compute_board_score(b2, original_bonus), b2, rack_after, pl2, moves + [(sc, w, d, r0, c0)], next_words))
                 temp_words = next_words
@@ -160,7 +220,7 @@ def beam_from_first(play, board, rack_count, words, wordset, original_bonus, bea
     if not can_play:
         return (float('-inf'), None, None)
     place_word(board_copy, play_word, play[3], play[4], play[2])
-    placed_copy = {(r, c) for r in range(N) for c in range(N) if is_letter(board_copy[r][c])}
+    placed_copy = {(r, c) for r in range(N) for c in range(N) if len(board_copy[r][c]) == 1}
     score, final_board, moves = full_beam_search(
         board_copy, rack_after_first, words_for_sim, wordset, placed_copy, original_bonus, beam_width=beam_width, max_moves=max_moves
     )
