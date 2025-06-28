@@ -8,6 +8,8 @@ import utils
 from utils import N, MAPPING, log_with_time, vlog
 from board import print_board, compute_board_score
 import time  # Ensure time is available in imported modules
+from functools import lru_cache
+from score_cache import board_to_tuple, cached_board_score, print_cache_summary
 
 # Ensure search module has access to time
 import search
@@ -50,10 +52,15 @@ def run_solver():
     parser.add_argument('--beam-width', type=int, default=10, help='Beam width for the search (default: 10)')
     parser.add_argument('--depth', type=int, default=20, help='Maximum number of moves to search (default: 20)')
     parser.add_argument('--verbose', action='store_true', help='Enable verbose logging')
+    parser.add_argument('--no-cache', action='store_true', help='Disable board score caching')
     args = parser.parse_args()
 
     utils.start_time = time.time()
     utils.VERBOSE = args.verbose
+
+    # Pass cache disable flag to score_cache
+    import score_cache
+    score_cache.CACHE_DISABLED = args.no_cache
 
     board, rack = fetch_board_and_rack()
     print("Today's Board:")
@@ -103,8 +110,10 @@ def run_solver():
             log_with_time(f"  {w} at ({r0},{c0}) {d} scoring {sc}")
         log_with_time("Final simulated board:")
         print_board(best_board)
-        print(f"Final board score: {compute_board_score(best_board, original_bonus)}")
+        print(f"Final board score: {cached_board_score(board_to_tuple(best_board), board_to_tuple(original_bonus))}")
         print("-" * 40)
 
+    # Remove lru_cache cache_info call, just print the summary
+    print_cache_summary()
     total_elapsed = time.time() - utils.start_time
     print(f"Total time: {int(total_elapsed // 60)}m {total_elapsed % 60:.1f}s")

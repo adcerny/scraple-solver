@@ -4,7 +4,8 @@ from collections import Counter
 import concurrent.futures
 import time
 from utils import log_with_time, vlog, N
-from board import board_valid, place_word, compute_board_score
+from board import board_valid, place_word
+from score_cache import cached_board_score, board_to_tuple
 
 def can_play_word_on_board(word, r0, c0, d, board, rack):
     rack = rack.copy()
@@ -127,7 +128,7 @@ def validate_new_words(board, wordset, w, r0, c0, d):
 
 def find_best(board, rack_count, words, wordset, touch=None, original_bonus=None, top_k=10):
     t0 = time.time()
-    base_score = compute_board_score(board, original_bonus)
+    base_score = cached_board_score(board_to_tuple(board), board_to_tuple(original_bonus))
     checked = 0
     candidates = []
     for w in words:
@@ -143,7 +144,7 @@ def find_best(board, rack_count, words, wordset, touch=None, original_bonus=None
                 if not can_play: continue
                 place_word(board_copy, w, r, c, 'H')
                 if not validate_new_words(board_copy, wordset, w, r, c, 'H'): continue
-                move_score = compute_board_score(board_copy, original_bonus)
+                move_score = cached_board_score(board_to_tuple(board_copy), board_to_tuple(original_bonus))
                 bonus_count = sum(1 for i in range(L) if board[r][c+i] in {'DL','TL','DW','TW'})
                 candidates.append((move_score, bonus_count, L, w, 'H', r, c))
                 checked += 1
@@ -158,7 +159,7 @@ def find_best(board, rack_count, words, wordset, touch=None, original_bonus=None
                 if not can_play: continue
                 place_word(board_copy, w, r, c, 'V')
                 if not validate_new_words(board_copy, wordset, w, r, c, 'V'): continue
-                move_score = compute_board_score(board_copy, original_bonus)
+                move_score = cached_board_score(board_to_tuple(board_copy), board_to_tuple(original_bonus))
                 bonus_count = sum(1 for i in range(L) if board[r+i][c] in {'DL','TL','DW','TW'})
                 candidates.append((move_score, bonus_count, L, w, 'V', r, c))
                 checked += 1
@@ -200,7 +201,7 @@ def full_beam_search(board, rack_count, words, wordset, placed, original_bonus, 
                     continue
                 pl2 = {(r, c) for r in range(N) for c in range(N) if len(b2[r][c]) == 1}
                 next_words = [x for x in temp_words if x != w]
-                next_state.append((compute_board_score(b2, original_bonus), b2, rack_after, pl2, moves + [(sc, w, d, r0, c0)], next_words))
+                next_state.append((cached_board_score(board_to_tuple(b2), board_to_tuple(original_bonus)), b2, rack_after, pl2, moves + [(sc, w, d, r0, c0)], next_words))
                 temp_words = next_words
         vlog(f"full_beam_search move {move_num}: {len(state)} states expanded to {len(next_state)}", t0)
         state = sorted(next_state, key=lambda x: x[0], reverse=True)[:beam_width]
