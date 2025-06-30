@@ -82,9 +82,10 @@ def run_solver():
             board, rack, words, wordset, original_bonus, beam_width=beam_width, max_moves=max_moves
         )[1]
     else:
-        log_with_time(f"Evaluating branch-and-bound search with max depth {max_moves}...")
+        log_with_time(f"Evaluating branch-and-bound search with max depth {max_moves} and beam width {beam_width}...")
         score, board_res, moves = branch_and_bound_search(
-            board, rack, words, wordset, original_bonus, max_moves=max_moves
+            board, rack, words, wordset, original_bonus,
+            beam_width=beam_width, max_moves=max_moves
         )
         results = [(score, board_res, moves)] if moves else []
     seen_boards = set()
