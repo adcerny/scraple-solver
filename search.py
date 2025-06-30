@@ -192,15 +192,28 @@ def full_beam_search(board, rack_count, words, wordset, placed, original_bonus, 
                     break
                 can_play, rack_after = can_play_word_on_board(w, r0, c0, d, b, rc)
                 if not can_play:
-                    temp_words = [x for x in temp_words if x != w]
+                    try:
+                        while True:
+                            temp_words.remove(w)
+                    except ValueError:
+                        pass
                     continue
                 b2 = [row[:] for row in b]
                 place_word(b2, w, r0, c0, d)
                 if not validate_new_words(b2, wordset, w, r0, c0, d):
-                    temp_words = [x for x in temp_words if x != w]
+                    try:
+                        while True:
+                            temp_words.remove(w)
+                    except ValueError:
+                        pass
                     continue
                 pl2 = {(r, c) for r in range(N) for c in range(N) if len(b2[r][c]) == 1}
-                next_words = [x for x in temp_words if x != w]
+                next_words = temp_words.copy()
+                try:
+                    while True:
+                        next_words.remove(w)
+                except ValueError:
+                    pass
                 next_state.append((cached_board_score(board_to_tuple(b2), board_to_tuple(original_bonus)), b2, rack_after, pl2, moves + [(sc, w, d, r0, c0)], next_words))
                 temp_words = next_words
         vlog(f"full_beam_search move {move_num}: {len(state)} states expanded to {len(next_state)}", t0)
@@ -243,7 +256,11 @@ def parallel_first_beam(board, rack, words, wordset, original_bonus, beam_width=
         if not w:
             break
         first_choices.append((sc, w, d, r0, c0))
-        temp_words = [x for x in temp_words if x != w]
+        try:
+            while True:
+                temp_words.remove(w)
+        except ValueError:
+            pass
 
     results = []
     with concurrent.futures.ProcessPoolExecutor() as executor:
