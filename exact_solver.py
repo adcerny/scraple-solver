@@ -24,17 +24,17 @@ def solve_ilp(board: List[List[str]], rack: List[str], words: List[str], wordset
 
     words_n = [w for w in words if len(w) == N]
 
+    # Filter words that cannot be formed with the available letters at all.
+    total_available = rack_count + pred_count
+    words_n = [w for w in words_n
+               if all(Counter(w)[ch] <= total_available[ch] for ch in Counter(w))]
+
     row_cands = []
     for r in range(N):
         pattern = [pred_letters.get((r, c)) for c in range(N)]
         cand = []
         for w in words_n:
-            ok = True
-            for c, ch in enumerate(w):
-                if pattern[c] and pattern[c] != ch:
-                    ok = False
-                    break
-            if ok:
+            if all(p == ch or p is None for p, ch in zip(pattern, w)):
                 cand.append(w)
         if not cand:
             return None, 0
@@ -45,16 +45,33 @@ def solve_ilp(board: List[List[str]], rack: List[str], words: List[str], wordset
         pattern = [pred_letters.get((r, c)) for r in range(N)]
         cand = []
         for w in words_n:
-            ok = True
-            for r, ch in enumerate(w):
-                if pattern[r] and pattern[r] != ch:
-                    ok = False
-                    break
-            if ok:
+            if all(p == ch or p is None for p, ch in zip(pattern, w)):
                 cand.append(w)
         if not cand:
             return None, 0
         col_cands.append(cand)
+
+    # Basic constraint propagation to prune inconsistent row/column words
+    changed = True
+    while changed:
+        changed = False
+        for r in range(N):
+            for c in range(N):
+                row_letters = {w[c] for w in row_cands[r]}
+                col_letters = {w[r] for w in col_cands[c]}
+                allowed = row_letters & col_letters
+                if len(allowed) == 0:
+                    return None, 0
+                new_row = [w for w in row_cands[r] if w[c] in allowed]
+                if len(new_row) != len(row_cands[r]):
+                    row_cands[r] = new_row
+                    changed = True
+                new_col = [w for w in col_cands[c] if w[r] in allowed]
+                if len(new_col) != len(col_cands[c]):
+                    col_cands[c] = new_col
+                    changed = True
+                if not row_cands[r] or not col_cands[c]:
+                    return None, 0
 
     row_scores = {}
     for r, cand in enumerate(row_cands):
