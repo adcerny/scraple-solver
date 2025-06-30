@@ -1,5 +1,6 @@
 from board import compute_board_score
 import hashlib
+import utils
 
 # Debug output disabled
 
@@ -22,9 +23,10 @@ def cached_board_score(board_tuple, bonus_tuple):
         board = [list(row) for row in board_tuple]
         bonus = [list(row) for row in bonus_tuple]
         return compute_board_score(board, bonus)
-    h = board_hash(board_tuple, bonus_tuple)
-    count = _seen_hashes.get(h, 0)
-    _seen_hashes[h] = count + 1
+    if utils.VERBOSE:
+        h = board_hash(board_tuple, bonus_tuple)
+        count = _seen_hashes.get(h, 0)
+        _seen_hashes[h] = count + 1
     if not hasattr(cached_board_score, 'cache'):
         cached_board_score.cache = {}
     cache = cached_board_score.cache
