@@ -186,21 +186,21 @@ def parallel_first_beam(board, rack, words, wordset, original_bonus, beam_width=
 
     results = []
     with concurrent.futures.ProcessPoolExecutor() as executor:
-        future_to_start = {
+        future_to_info = {
             executor.submit(
                 beam_from_first, play, board, rack_count, pruned_words, wordset, original_bonus, beam_width, max_moves
-            ): time.time()
-            for play in first_choices
+            ): (time.time(), play, i)
+            for i, play in enumerate(first_choices)
         }
-        for i, future in enumerate(concurrent.futures.as_completed(future_to_start)):
-            start = future_to_start[future]
+        for future in concurrent.futures.as_completed(future_to_info):
+            start, play, idx = future_to_info[future]
             score, board_result, moves = future.result()
             elapsed = time.time() - start
-            _, word, direction, row, col = first_choices[i]
+            _, word, direction, row, col = play
             color = "\033[92m" if score == max(r[0] for r in results + [(score, None, None)]) else "\033[94m"
             reset = "\033[0m"
-            log_with_time(f"{color}Move {i+1}/{len(first_choices)}: {word} at ({row},{col}) {direction} → final score: {score} (duration: {elapsed:.3f}s){reset}")
-            vlog(f"beam_from_first {i+1}", start)
+            log_with_time(f"{color}Move {idx+1}/{len(first_choices)}: {word} at ({row},{col}) {direction} → final score: {score} (duration: {elapsed:.3f}s){reset}")
+            vlog(f"beam_from_first {idx+1}", start)
             if moves is not None:
                 results.append((score, board_result, moves))
 
