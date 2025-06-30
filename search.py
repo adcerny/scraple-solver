@@ -2,8 +2,9 @@
 
 from collections import Counter
 import concurrent.futures
+import heapq
 import time
-from utils import log_with_time, vlog, N
+from utils import log_with_time, vlog, N, LETTER_SCORES
 from board import board_valid, place_word
 from score_cache import cached_board_score, board_to_tuple
 
@@ -287,3 +288,111 @@ def parallel_first_beam(board, rack, words, wordset, original_bonus, beam_width=
     max_score = max(r[0] for r in results)
     best_results = [r for r in results if r[0] == max_score]
     return max_score, best_results
+
+
+def _upper_bound_score(rack_count):
+    """Admissible upper bound on additional score from remaining rack."""
+    bound = 0
+    for ch, cnt in rack_count.items():
+        # Assume at most a triple word score for each letter
+        bound += LETTER_SCORES.get(ch, 0) * 3 * cnt
+    if sum(rack_count.values()) >= 7:
+        bound += 50  # Potential bingo bonus
+    return bound
+
+
+def _iter_moves(board, rack_count, words, wordset, original_bonus):
+    """Generate all valid moves from the given state."""
+    for w in words:
+        L = len(w)
+        for r in range(N):
+            for c in range(N - L + 1):
+                if not is_valid_placement(w, board, rack_count, wordset, r, c, 'H'):
+                    continue
+                board_copy = [row[:] for row in board]
+                rack_copy = rack_count.copy()
+                can_play, rack_after = can_play_word_on_board(w, r, c, 'H', board_copy, rack_copy)
+                if not can_play:
+                    continue
+                place_word(board_copy, w, r, c, 'H')
+                if not validate_new_words(board_copy, wordset, w, r, c, 'H'):
+                    continue
+                move_score = cached_board_score(board_to_tuple(board_copy), board_to_tuple(original_bonus))
+                yield move_score, board_copy, rack_after, (move_score, w, 'H', r, c)
+        for r in range(N - L + 1):
+            for c in range(N):
+                if not is_valid_placement(w, board, rack_count, wordset, r, c, 'V'):
+                    continue
+                board_copy = [row[:] for row in board]
+                rack_copy = rack_count.copy()
+                can_play, rack_after = can_play_word_on_board(w, r, c, 'V', board_copy, rack_copy)
+                if not can_play:
+                    continue
+                place_word(board_copy, w, r, c, 'V')
+                if not validate_new_words(board_copy, wordset, w, r, c, 'V'):
+                    continue
+                move_score = cached_board_score(board_to_tuple(board_copy), board_to_tuple(original_bonus))
+                yield move_score, board_copy, rack_after, (move_score, w, 'V', r, c)
+
+
+def branch_and_bound_search(board, rack, words, wordset, original_bonus, *, beam_width=5, max_moves=20):
+    """Best-first search with an admissible upper bound heuristic."""
+    rack_count = Counter(rack)
+    start_score = cached_board_score(board_to_tuple(board), board_to_tuple(original_bonus))
+
+    best_score = start_score
+    best_board = board
+    best_moves = []
+
+    # priority queue ordered by negative estimated total score
+    heap = [( -(start_score + _upper_bound_score(rack_count)), start_score, board, rack_count, set(), [], words )]
+    visited = set()
+
+    while heap:
+        est_neg, current_score, b, rc, placed, moves, rem_words = heapq.heappop(heap)
+
+        key = (board_to_tuple(b), tuple(sorted(rc.items())), tuple(moves))
+        if key in visited:
+            continue
+        visited.add(key)
+
+        if current_score > best_score:
+            best_score = current_score
+            best_board = b
+            best_moves = moves
+
+        if not rc or len(moves) >= max_moves:
+            continue
+
+        pruned_words = prune_words(rem_words, rc, b)
+        temp_words = pruned_words.copy()
+        for _ in range(beam_width):
+            sc, w, d, r0, c0 = find_best(b, rc, temp_words, wordset, placed if moves else None, original_bonus)
+            if not w:
+                break
+            can_play, rack_after = can_play_word_on_board(w, r0, c0, d, b, rc)
+            if not can_play:
+                while w in temp_words:
+                    temp_words.remove(w)
+                continue
+            b2 = [row[:] for row in b]
+            place_word(b2, w, r0, c0, d)
+            if not validate_new_words(b2, wordset, w, r0, c0, d):
+                while w in temp_words:
+                    temp_words.remove(w)
+                continue
+            placed2 = {(rr, cc) for rr in range(N) for cc in range(N) if len(b2[rr][cc]) == 1}
+            new_score = cached_board_score(board_to_tuple(b2), board_to_tuple(original_bonus))
+            next_words = temp_words.copy()
+            while w in next_words:
+                next_words.remove(w)
+
+            estimate = new_score + _upper_bound_score(rack_after)
+            if estimate <= best_score:
+                temp_words = next_words
+                continue
+
+            heapq.heappush(heap, ( -estimate, new_score, b2, rack_after, placed2, moves + [(sc, w, d, r0, c0)], next_words ))
+            temp_words = next_words
+
+    return best_score, best_board, best_moves

@@ -17,7 +17,7 @@ import sys
 if 'time' not in search.__dict__:
     search.time = time
 
-from search import parallel_first_beam
+from search import parallel_first_beam, branch_and_bound_search
 
 API_URL  = 'https://scraple.io/api/daily-puzzle'
 DICT_URL = 'https://scraple.io/dictionary.txt'
@@ -53,6 +53,8 @@ def run_solver():
     parser.add_argument('--depth', type=int, default=20, help='Maximum number of moves to search (default: 20)')
     parser.add_argument('--verbose', action='store_true', help='Enable verbose logging')
     parser.add_argument('--no-cache', action='store_true', help='Disable board score caching')
+    parser.add_argument('--method', choices=['beam', 'bb'], default='beam',
+                        help='Search method: beam (default) or bb (branch and bound)')
     args = parser.parse_args()
 
     utils.start_time = time.time()
@@ -71,14 +73,21 @@ def run_solver():
 
     beam_width = args.beam_width
     max_moves = args.depth
-    log_with_time(f"Evaluating full {beam_width} beam width search with max depth {max_moves}...")
 
-    # Custom logic to print board every time a new best or equal best is found
     best_total = float('-inf')
     best_results = []
-    results = parallel_first_beam(
-        board, rack, words, wordset, original_bonus, beam_width=beam_width, max_moves=max_moves
-    )[1]
+    if args.method == 'beam':
+        log_with_time(f"Evaluating full {beam_width} beam width search with max depth {max_moves}...")
+        results = parallel_first_beam(
+            board, rack, words, wordset, original_bonus, beam_width=beam_width, max_moves=max_moves
+        )[1]
+    else:
+        log_with_time(f"Evaluating branch-and-bound search with max depth {max_moves} and beam width {beam_width}...")
+        score, board_res, moves = branch_and_bound_search(
+            board, rack, words, wordset, original_bonus,
+            beam_width=beam_width, max_moves=max_moves
+        )
+        results = [(score, board_res, moves)] if moves else []
     seen_boards = set()
     for idx, (score, best_board, best_moves) in enumerate(results, 1):
         board_key = tuple(tuple(row) for row in best_board)
