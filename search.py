@@ -128,7 +128,6 @@ def validate_new_words(board, wordset, w, r0, c0, d):
 
 def find_best(board, rack_count, words, wordset, touch=None, original_bonus=None, top_k=10):
     t0 = time.time()
-    base_score = cached_board_score(board_to_tuple(board), board_to_tuple(original_bonus))
     checked = 0
     candidates = []
     for w in words:
