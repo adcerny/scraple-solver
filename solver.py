@@ -7,6 +7,7 @@ from collections import Counter
 import utils
 from utils import N, MAPPING, log_with_time, vlog
 from board import print_board, compute_board_score
+from exact_solver import solve_ilp
 import time  # Ensure time is available in imported modules
 from functools import lru_cache
 from score_cache import board_to_tuple, cached_board_score, print_cache_summary
@@ -53,6 +54,7 @@ def run_solver():
     parser.add_argument('--depth', type=int, default=20, help='Maximum number of moves to search (default: 20)')
     parser.add_argument('--verbose', action='store_true', help='Enable verbose logging')
     parser.add_argument('--no-cache', action='store_true', help='Disable board score caching')
+    parser.add_argument('--solver', choices=['beam', 'ilp'], default='beam', help='Choose solving method: beam or ilp')
     args = parser.parse_args()
 
     utils.start_time = time.time()
@@ -68,6 +70,19 @@ def run_solver():
     print("Rack:", ' '.join(rack))
     original_bonus = [row[:] for row in board]
     words, wordset = load_dictionary()
+
+    if args.solver == 'ilp':
+        final_board, score = solve_ilp(board, rack, words, wordset, original_bonus)
+        if final_board is None:
+            log_with_time("No valid solution found.")
+        else:
+            log_with_time("ILP solver result:")
+            print_board(final_board)
+            print(f"Final board score: {score}")
+        print_cache_summary()
+        total_elapsed = time.time() - utils.start_time
+        print(f"Total time: {int(total_elapsed // 60)}m {total_elapsed % 60:.1f}s")
+        return
 
     beam_width = args.beam_width
     max_moves = args.depth
