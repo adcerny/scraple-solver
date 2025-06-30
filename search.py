@@ -52,14 +52,41 @@ def is_valid_placement(w, board, rack_count, wordset, r0, c0, d):
     if sum(needed.values()) == 0: return False
     temp = [row[:] for row in board]
     for i, ch in enumerate(w):
-        r = r0 + (i if d == 'V' else 0); c = c0 + (i if d == 'H' else 0)
-        if not (len(temp[r][c]) == 1): temp[r][c] = ch
+        r = r0 + (i if d == 'V' else 0)
+        c = c0 + (i if d == 'H' else 0)
+        if not (len(temp[r][c]) == 1):
+            temp[r][c] = ch
+
+    # Validate the main word formed in the placement direction
+    if d == 'H':
+        c_start = c0
+        while c_start > 0 and len(temp[r0][c_start-1]) == 1:
+            c_start -= 1
+        c_end = c0 + len(w)
+        while c_end < N and len(temp[r0][c_end]) == 1:
+            c_end += 1
+        main_word = ''.join(temp[r0][c] for c in range(c_start, c_end))
+    else:
+        r_start = r0
+        while r_start > 0 and len(temp[r_start-1][c0]) == 1:
+            r_start -= 1
+        r_end = r0 + len(w)
+        while r_end < N and len(temp[r_end][c0]) == 1:
+            r_end += 1
+        main_word = ''.join(temp[r][c0] for r in range(r_start, r_end))
+    if len(main_word) > 1 and main_word not in wordset:
+        return False
+
+    # Validate any perpendicular words created
     for i, ch in enumerate(w):
-        r = r0 + (i if d == 'V' else 0); c = c0 + (i if d == 'H' else 0)
+        r = r0 + (i if d == 'V' else 0)
+        c = c0 + (i if d == 'H' else 0)
         coords = get_perpendicular_coords(temp, r, c, d)
         if coords:
             word = ''.join(temp[rr][cc] for rr, cc in coords)
-            if word not in wordset: return False
+            if word not in wordset:
+                return False
+
     return True
 
 def prune_words(words, rack_count, board):
@@ -74,57 +101,6 @@ def prune_words(words, rack_count, board):
     vlog(f"prune_words: reduced from {len(words)} to {len(pruned)}", t0)
     return pruned
 
-def validate_new_words(board, wordset, w, r0, c0, d):
-    # Check the main word
-    main_word = []
-    if d == 'H':
-        c_start = c0
-        while c_start > 0 and len(board[r0][c_start-1]) == 1:
-            c_start -= 1
-        c_end = c0 + len(w)
-        while c_end < N and len(board[r0][c_end]) == 1:
-            c_end += 1
-        main_word = ''.join(board[r0][c] for c in range(c_start, c_end))
-    else:
-        r_start = r0
-        while r_start > 0 and len(board[r_start-1][c0]) == 1:
-            r_start -= 1
-        r_end = r0 + len(w)
-        while r_end < N and len(board[r_end][c0]) == 1:
-            r_end += 1
-        main_word = ''.join(board[r][c0] for r in range(r_start, r_end))
-    if len(main_word) > 1 and main_word not in wordset:
-        return False
-    # Check all perpendicular words formed by new tiles
-    for i, ch in enumerate(w):
-        r = r0 + (i if d == 'V' else 0)
-        c = c0 + (i if d == 'H' else 0)
-        if len(board[r][c]) != 1:  # Only check for new tiles placed
-            continue
-        # Build perpendicular word
-        if d == 'H':
-            r_start = r
-            while r_start > 0 and len(board[r_start-1][c]) == 1:
-                r_start -= 1
-            r_end = r + 1
-            while r_end < N and len(board[r_end][c]) == 1:
-                r_end += 1
-            if r_end - r_start > 1:
-                perp_word = ''.join(board[rr][c] for rr in range(r_start, r_end))
-                if perp_word not in wordset:
-                    return False
-        else:
-            c_start = c
-            while c_start > 0 and len(board[r][c_start-1]) == 1:
-                c_start -= 1
-            c_end = c + 1
-            while c_end < N and len(board[r][c_end]) == 1:
-                c_end += 1
-            if c_end - c_start > 1:
-                perp_word = ''.join(board[r][cc] for cc in range(c_start, c_end))
-                if perp_word not in wordset:
-                    return False
-    return True
 
 def find_best(board, rack_count, words, wordset, touch=None, original_bonus=None, top_k=10):
     t0 = time.time()
@@ -143,7 +119,6 @@ def find_best(board, rack_count, words, wordset, touch=None, original_bonus=None
                 can_play, _ = can_play_word_on_board(w, r, c, 'H', board_copy, rack_copy)
                 if not can_play: continue
                 place_word(board_copy, w, r, c, 'H')
-                if not validate_new_words(board_copy, wordset, w, r, c, 'H'): continue
                 move_score = cached_board_score(board_to_tuple(board_copy), board_to_tuple(original_bonus))
                 bonus_count = sum(1 for i in range(L) if board[r][c+i] in {'DL','TL','DW','TW'})
                 candidates.append((move_score, bonus_count, L, w, 'H', r, c))
@@ -158,7 +133,6 @@ def find_best(board, rack_count, words, wordset, touch=None, original_bonus=None
                 can_play, _ = can_play_word_on_board(w, r, c, 'V', board_copy, rack_copy)
                 if not can_play: continue
                 place_word(board_copy, w, r, c, 'V')
-                if not validate_new_words(board_copy, wordset, w, r, c, 'V'): continue
                 move_score = cached_board_score(board_to_tuple(board_copy), board_to_tuple(original_bonus))
                 bonus_count = sum(1 for i in range(L) if board[r+i][c] in {'DL','TL','DW','TW'})
                 candidates.append((move_score, bonus_count, L, w, 'V', r, c))
@@ -196,9 +170,6 @@ def full_beam_search(board, rack_count, words, wordset, placed, original_bonus, 
                     continue
                 b2 = [row[:] for row in b]
                 place_word(b2, w, r0, c0, d)
-                if not validate_new_words(b2, wordset, w, r0, c0, d):
-                    temp_words = [x for x in temp_words if x != w]
-                    continue
                 pl2 = {(r, c) for r in range(N) for c in range(N) if len(b2[r][c]) == 1}
                 next_words = [x for x in temp_words if x != w]
                 next_state.append((cached_board_score(board_to_tuple(b2), board_to_tuple(original_bonus)), b2, rack_after, pl2, moves + [(sc, w, d, r0, c0)], next_words))
