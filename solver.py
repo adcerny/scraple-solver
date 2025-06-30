@@ -16,6 +16,7 @@ if 'time' not in search.__dict__:
     search.time = time
 
 from search import parallel_first_beam
+from mcts_search import run_mcts_search
 
 API_URL  = 'https://scraple.io/api/daily-puzzle'
 DICT_URL = 'https://scraple.io/dictionary.txt'
@@ -50,6 +51,8 @@ def run_solver():
     parser.add_argument('--beam-width', type=int, default=10, help='Beam width for the search (default: 10)')
     parser.add_argument('--depth', type=int, default=20, help='Maximum number of moves to search (default: 20)')
     parser.add_argument('--verbose', action='store_true', help='Enable verbose logging')
+    parser.add_argument('--strategy', choices=['beam', 'mcts'], default='beam', help='Search strategy to use')
+    parser.add_argument('--iterations', type=int, default=1000, help='Iteration limit for MCTS (default: 1000)')
     args = parser.parse_args()
 
     utils.start_time = time.time()
@@ -64,10 +67,19 @@ def run_solver():
 
     beam_width = args.beam_width
     max_moves = args.depth
-    log_with_time(f"Evaluating full {beam_width} beam width search with max depth {max_moves}...")
-    best_total, best_results = parallel_first_beam(
-        board, rack, words, wordset, original_bonus, beam_width=beam_width, max_moves=max_moves
-    )
+
+    if args.strategy == 'beam':
+        log_with_time(f"Evaluating full {beam_width} beam width search with max depth {max_moves}...")
+        best_total, best_results = parallel_first_beam(
+            board, rack, words, wordset, original_bonus, beam_width=beam_width, max_moves=max_moves
+        )
+    else:
+        log_with_time(f"Running MCTS with {args.iterations} iterations and max depth {max_moves}...")
+        score, best_board, moves = run_mcts_search(
+            board, rack, words, wordset, original_bonus, iterations=args.iterations, max_depth=max_moves
+        )
+        best_total = score
+        best_results = [(score, best_board, [(score, *m) for m in moves])]
 
     if not best_results:
         log_with_time("No valid full simulation found.")
@@ -86,7 +98,11 @@ def run_solver():
         log_with_time(f"Solution {unique_count}:")
         log_with_time("Move sequence:")
         for move in best_moves:
-            sc, w, d, r0, c0 = move
+            if len(move) == 5:
+                sc, w, d, r0, c0 = move
+            else:
+                sc = score
+                w, d, r0, c0 = move
             log_with_time(f"  {w} at ({r0},{c0}) {d} scoring {sc}")
         log_with_time("Final simulated board:")
         print_board(best_board)
