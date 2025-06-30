@@ -11,6 +11,8 @@ from exact_solver import solve_ilp
 import time  # Ensure time is available in imported modules
 from functools import lru_cache
 from score_cache import board_to_tuple, cached_board_score, print_cache_summary
+import json
+import os
 
 # Ensure search module has access to time
 import search
@@ -24,29 +26,60 @@ API_URL  = 'https://scraple.io/api/daily-puzzle'
 DICT_URL = 'https://scraple.io/dictionary.txt'
 
 def fetch_board_and_rack():
-    resp = requests.get(API_URL)
-    resp.raise_for_status()
-    data = resp.json()
-    board = [['' for _ in range(N)] for _ in range(N)]
-    for bonus, (r, c) in data['bonusTilePositions'].items():
-        board[r][c] = MAPPING[bonus]
-    rack = [t['letter'].upper() for t in data['letters']]
-    return board, rack
+    cache_file = 'board_cache.json'
+    try:
+        resp = requests.get(API_URL, timeout=10)
+        resp.raise_for_status()
+        data = resp.json()
+        board = [['' for _ in range(N)] for _ in range(N)]
+        for bonus, (r, c) in data['bonusTilePositions'].items():
+            board[r][c] = MAPPING[bonus]
+        rack = [t['letter'].upper() for t in data['letters']]
+        # Save to cache
+        with open(cache_file, 'w') as f:
+            json.dump({'board': board, 'rack': rack}, f)
+        return board, rack
+    except Exception as e:
+        print(f"[WARNING] Could not fetch board/rack from API: {e}. Trying local cache...")
+        if os.path.exists(cache_file):
+            with open(cache_file, 'r') as f:
+                cached = json.load(f)
+            return cached['board'], cached['rack']
+        else:
+            raise RuntimeError("No board/rack available from API or cache.")
+
 
 def load_dictionary():
+    cache_file = 'dictionary_cache.txt'
     t0 = time.time()
-    log_with_time("⟳ Downloading dictionary…")
-    resp = requests.get(DICT_URL)
-    resp.raise_for_status()
-    words = [
-        w.strip().upper()
-        for w in resp.text.splitlines()
-        if w.strip().isalpha() and 2 <= len(w.strip()) <= N
-    ]
-    wordset = set(words)
-    vlog(f"Dictionary loaded and filtered ({len(words)} words)", t0)
-    log_with_time(f"✅ {len(words)} words")
-    return words, wordset
+    try:
+        log_with_time("⟳ Downloading dictionary…")
+        resp = requests.get(DICT_URL, timeout=10)
+        resp.raise_for_status()
+        words = [
+            w.strip().upper()
+            for w in resp.text.splitlines()
+            if w.strip().isalpha() and 2 <= len(w.strip()) <= N
+        ]
+        # Save to cache
+        with open(cache_file, 'w') as f:
+            for w in words:
+                f.write(w + '\n')
+        wordset = set(words)
+        vlog(f"Dictionary loaded and filtered ({len(words)} words)", t0)
+        log_with_time(f"✅ {len(words)} words")
+        return words, wordset
+    except Exception as e:
+        print(f"[WARNING] Could not fetch dictionary from API: {e}. Trying local cache...")
+        if os.path.exists(cache_file):
+            with open(cache_file, 'r') as f:
+                words = [w.strip().upper() for w in f if w.strip().isalpha() and 2 <= len(w.strip()) <= N]
+            wordset = set(words)
+            vlog(f"Dictionary loaded from cache ({len(words)} words)", t0)
+            log_with_time(f"✅ {len(words)} words (from cache)")
+            return words, wordset
+        else:
+            raise RuntimeError("No dictionary available from API or cache.")
 
 def run_solver():
     parser = argparse.ArgumentParser(description="ScrapleSolver")
