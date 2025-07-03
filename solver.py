@@ -73,27 +73,10 @@ def run_solver():
     max_moves = args.depth
     log_with_time(f"Evaluating full {beam_width} beam width search with max depth {max_moves}...")
 
-    # Custom logic to print board every time a new best or equal best is found
-    best_total = float('-inf')
-    best_results = []
-    results = parallel_first_beam(
+    # Run the search and collect best results as they are found
+    best_total, best_results = parallel_first_beam(
         board, rack, words, wordset, original_bonus, beam_width=beam_width, max_moves=max_moves
-    )[1]
-    seen_boards = set()
-    for idx, (score, best_board, best_moves) in enumerate(results, 1):
-        board_key = tuple(tuple(row) for row in best_board)
-        if board_key in seen_boards:
-            continue
-        seen_boards.add(board_key)
-        if score > best_total:
-            best_total = score
-            print(f"\nNew best score found: {score}")
-            print_board(best_board)
-            best_results = [(score, best_board, best_moves)]
-        elif score == best_total:
-            print(f"\nEqual best score found: {score}")
-            print_board(best_board)
-            best_results.append((score, best_board, best_moves))
+    )
 
     if not best_results:
         log_with_time("No valid full simulation found.")
