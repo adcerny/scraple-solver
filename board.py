@@ -2,28 +2,34 @@
 
 from colorama import Fore, Style
 from utils import N, LETTER_SCORES, log_with_time, vlog
+import threading
 
-def is_letter(cell):
-    return len(cell) == 1
+_print_lock = threading.Lock()
+
+# Helper: precompute a mask of letter positions for a board
+# Returns a 2D list of bools: True if cell is a letter, else False
+def get_letter_mask(board):
+    return [[len(cell) == 1 for cell in row] for row in board]
 
 def print_board(board):
-    for row in board:
-        line = []
-        for cell in row:
-            if cell == 'DL':
-                line.append(Fore.BLUE + 'DL' + Style.RESET_ALL)
-            elif cell == 'TL':
-                line.append(Fore.CYAN + 'TL' + Style.RESET_ALL)
-            elif cell == 'DW':
-                line.append(Fore.MAGENTA + 'DW' + Style.RESET_ALL)
-            elif cell == 'TW':
-                line.append(Fore.RED + 'TW' + Style.RESET_ALL)
-            elif is_letter(cell):
-                line.append(Fore.GREEN + f' {cell}' + Style.RESET_ALL)
-            else:
-                line.append(Style.DIM + '··' + Style.RESET_ALL)
-        print(' '.join(line))
-    print()
+    with _print_lock:
+        for row in board:
+            line = []
+            for cell in row:
+                if cell == 'DL':
+                    line.append(Fore.BLUE + 'DL' + Style.RESET_ALL)
+                elif cell == 'TL':
+                    line.append(Fore.CYAN + 'TL' + Style.RESET_ALL)
+                elif cell == 'DW':
+                    line.append(Fore.MAGENTA + 'DW' + Style.RESET_ALL)
+                elif cell == 'TW':
+                    line.append(Fore.RED + 'TW' + Style.RESET_ALL)
+                elif len(cell) == 1:
+                    line.append(Fore.GREEN + f' {cell}' + Style.RESET_ALL)
+                else:
+                    line.append(Style.DIM + '··' + Style.RESET_ALL)
+            print(' '.join(line))
+        print()
 
 def place_word(board, w, r0, c0, d):
     for i, ch in enumerate(w):
@@ -33,13 +39,14 @@ def place_word(board, w, r0, c0, d):
 
 def compute_board_score(board, original_bonus):
     total = 0
+    letter_mask = get_letter_mask(board)
     # Horizontal words
     for r in range(N):
         c = 0
         while c < N:
-            if is_letter(board[r][c]):
+            if letter_mask[r][c]:
                 start = c
-                while c < N and is_letter(board[r][c]):
+                while c < N and letter_mask[r][c]:
                     c += 1
                 if c - start >= 2:
                     total += score_word(board[r][start:c], original_bonus[r][start:c])
@@ -49,9 +56,9 @@ def compute_board_score(board, original_bonus):
     for c in range(N):
         r = 0
         while r < N:
-            if is_letter(board[r][c]):
+            if letter_mask[r][c]:
                 start = r
-                while r < N and is_letter(board[r][c]):
+                while r < N and letter_mask[r][c]:
                     r += 1
                 if r - start >= 2:
                     word = [board[i][c] for i in range(start, r)]
@@ -73,13 +80,14 @@ def score_word(letters, bonuses):
     return score * word_multiplier
 
 def board_valid(board, wordset):
+    letter_mask = get_letter_mask(board)
     # Horizontal
     for r in range(N):
         c = 0
         while c < N:
-            if is_letter(board[r][c]):
+            if letter_mask[r][c]:
                 start = c
-                while c < N and is_letter(board[r][c]):
+                while c < N and letter_mask[r][c]:
                     c += 1
                 if c - start >= 2:
                     word = ''.join(board[r][start:c])
@@ -91,9 +99,9 @@ def board_valid(board, wordset):
     for c in range(N):
         r = 0
         while r < N:
-            if is_letter(board[r][c]):
+            if letter_mask[r][c]:
                 start = r
-                while r < N and is_letter(board[r][c]):
+                while r < N and letter_mask[r][c]:
                     r += 1
                 if r - start >= 2:
                     word = ''.join(board[i][c] for i in range(start, r))

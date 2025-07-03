@@ -8,6 +8,8 @@ import utils
 from utils import N, MAPPING, log_with_time, vlog
 from board import print_board, compute_board_score
 import time  # Ensure time is available in imported modules
+from functools import lru_cache
+from score_cache import board_to_tuple, cached_board_score, print_cache_summary
 
 # Ensure search module has access to time
 import search
@@ -50,10 +52,15 @@ def run_solver():
     parser.add_argument('--beam-width', type=int, default=10, help='Beam width for the search (default: 10)')
     parser.add_argument('--depth', type=int, default=20, help='Maximum number of moves to search (default: 20)')
     parser.add_argument('--verbose', action='store_true', help='Enable verbose logging')
+    parser.add_argument('--no-cache', action='store_true', help='Disable board score caching')
     args = parser.parse_args()
 
     utils.start_time = time.time()
     utils.VERBOSE = args.verbose
+
+    # Pass cache disable flag to score_cache
+    import score_cache
+    score_cache.CACHE_DISABLED = args.no_cache
 
     board, rack = fetch_board_and_rack()
     print("Today's Board:")
@@ -65,6 +72,8 @@ def run_solver():
     beam_width = args.beam_width
     max_moves = args.depth
     log_with_time(f"Evaluating full {beam_width} beam width search with max depth {max_moves}...")
+
+    # Run the search and collect best results as they are found
     best_total, best_results = parallel_first_beam(
         board, rack, words, wordset, original_bonus, beam_width=beam_width, max_moves=max_moves
     )
@@ -74,14 +83,8 @@ def run_solver():
         return
 
     log_with_time(f"Found {len(best_results)} highest scoring solution(s) with score {best_total}:")
-    seen_boards = set()
     unique_count = 0
     for idx, (score, best_board, best_moves) in enumerate(best_results, 1):
-        # Serialize the board as a tuple of tuples for uniqueness
-        board_key = tuple(tuple(row) for row in best_board)
-        if board_key in seen_boards:
-            continue  # Skip duplicate board layouts
-        seen_boards.add(board_key)
         unique_count += 1
         log_with_time(f"Solution {unique_count}:")
         log_with_time("Move sequence:")
@@ -90,8 +93,10 @@ def run_solver():
             log_with_time(f"  {w} at ({r0},{c0}) {d} scoring {sc}")
         log_with_time("Final simulated board:")
         print_board(best_board)
-        print(f"Final board score: {compute_board_score(best_board, original_bonus)}")
+        print(f"Final board score: {cached_board_score(board_to_tuple(best_board), board_to_tuple(original_bonus))}")
         print("-" * 40)
 
+    # Remove lru_cache cache_info call, just print the summary
+    print_cache_summary()
     total_elapsed = time.time() - utils.start_time
     print(f"Total time: {int(total_elapsed // 60)}m {total_elapsed % 60:.1f}s")
