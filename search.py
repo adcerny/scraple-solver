@@ -3,7 +3,7 @@
 from collections import Counter
 import concurrent.futures
 import time
-from utils import log_with_time, vlog, N
+from utils import log_with_time, vlog, N, PRINT_LOCK
 from board import board_valid, place_word, print_board
 from score_cache import cached_board_score, board_to_tuple
 
@@ -288,11 +288,13 @@ def parallel_first_beam(board, rack, words, wordset, original_bonus, beam_width=
                     seen_boards.add(board_key)
                     if score > best_total:
                         best_total = score
-                        print(f"\nNew best score found: {score}")
+                        with PRINT_LOCK:
+                            print(f"\nNew best score found: {score}", flush=True)
                         print_board(board_result)
                         best_results = [(score, board_result, moves)]
                     elif score == best_total:
-                        print(f"\nEqual best score found: {score}")
+                        with PRINT_LOCK:
+                            print(f"\nEqual best score found: {score}", flush=True)
                         print_board(board_result)
                         best_results.append((score, board_result, moves))
 
