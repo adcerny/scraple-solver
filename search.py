@@ -4,7 +4,7 @@ from collections import Counter
 import concurrent.futures
 import time
 from utils import log_with_time, vlog, N
-from board import board_valid, place_word
+from board import board_valid, place_word, print_board
 from score_cache import cached_board_score, board_to_tuple
 
 def can_play_word_on_board(word, r0, c0, d, board, rack):
@@ -262,6 +262,9 @@ def parallel_first_beam(board, rack, words, wordset, original_bonus, beam_width=
             pass
 
     results = []
+    best_total = float('-inf')
+    best_results = []
+    seen_boards = set()
     with concurrent.futures.ProcessPoolExecutor() as executor:
         future_to_start = {
             executor.submit(
@@ -280,10 +283,20 @@ def parallel_first_beam(board, rack, words, wordset, original_bonus, beam_width=
             vlog(f"beam_from_first {i+1}", start)
             if moves is not None:
                 results.append((score, board_result, moves))
+                board_key = tuple(tuple(r) for r in board_result)
+                if board_key not in seen_boards:
+                    seen_boards.add(board_key)
+                    if score > best_total:
+                        best_total = score
+                        print(f"\nNew best score found: {score}")
+                        print_board(board_result)
+                        best_results = [(score, board_result, moves)]
+                    elif score == best_total:
+                        print(f"\nEqual best score found: {score}")
+                        print_board(board_result)
+                        best_results.append((score, board_result, moves))
 
-    if not results:
+    if not best_results:
         return 0, []
 
-    max_score = max(r[0] for r in results)
-    best_results = [r for r in results if r[0] == max_score]
-    return max_score, best_results
+    return best_total, best_results
