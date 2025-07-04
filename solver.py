@@ -9,7 +9,7 @@ from utils import N, MAPPING, log_with_time, vlog
 from board import print_board, compute_board_score
 import time  # Ensure time is available in imported modules
 from functools import lru_cache
-from score_cache import board_to_tuple, cached_board_score, print_cache_summary
+from score_cache import board_to_tuple, cached_board_score
 
 # Ensure search module has access to time
 import search
@@ -92,11 +92,10 @@ def run_solver():
             sc, w, d, r0, c0 = move
             log_with_time(f"  {w} at ({r0},{c0}) {d} scoring {sc}")
         log_with_time("Final simulated board:")
+        print()
         print_board(best_board)
         print(f"Final board score: {cached_board_score(board_to_tuple(best_board), board_to_tuple(original_bonus))}")
         print("-" * 40)
 
-    # Remove lru_cache cache_info call, just print the summary
-    print_cache_summary()
     total_elapsed = time.time() - utils.start_time
     print(f"Total time: {int(total_elapsed // 60)}m {total_elapsed % 60:.1f}s")
