@@ -1,10 +1,7 @@
 # --- board.py ---
 
 from colorama import Fore, Style
-from utils import N, LETTER_SCORES, log_with_time, vlog
-import threading
-
-_print_lock = threading.Lock()
+from utils import N, LETTER_SCORES, log_with_time, vlog, PRINT_LOCK
 
 # Helper: precompute a mask of letter positions for a board
 # Returns a 2D list of bools: True if cell is a letter, else False
@@ -12,7 +9,9 @@ def get_letter_mask(board):
     return [[len(cell) == 1 for cell in row] for row in board]
 
 def print_board(board):
-    with _print_lock:
+    """Thread-safe printing of a board."""
+    with PRINT_LOCK:
+        lines = []
         for row in board:
             line = []
             for cell in row:
@@ -28,8 +27,9 @@ def print_board(board):
                     line.append(Fore.GREEN + f' {cell}' + Style.RESET_ALL)
                 else:
                     line.append(Style.DIM + '··' + Style.RESET_ALL)
-            print(' '.join(line))
-        print()
+            lines.append(' '.join(line))
+        print('\n'.join(lines), flush=True)
+        print(flush=True)
 
 def place_word(board, w, r0, c0, d):
     for i, ch in enumerate(w):

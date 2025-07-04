@@ -1,6 +1,7 @@
 # --- utils.py ---
 
 import time
+import threading
 
 # Board dimension
 N = 5
@@ -27,12 +28,16 @@ LETTER_SCORES = {
 VERBOSE = False
 start_time = None
 
+# Lock used for synchronized printing across threads
+PRINT_LOCK = threading.Lock()
+
 def log_with_time(msg):
     global start_time
     elapsed = time.time() - start_time
     mins = int(elapsed // 60)
     secs = elapsed % 60
-    print(f"[{mins:02}:{secs:06.3f}] {msg}")
+    with PRINT_LOCK:
+        print(f"[{mins:02}:{secs:06.3f}] {msg}", flush=True)
 
 def vlog(msg, t0=None):
     if VERBOSE:
