@@ -264,7 +264,8 @@ def parallel_first_beam(board, rack, words, wordset, original_bonus, beam_width=
     results = []
     best_total = float('-inf')
     best_results = []
-    seen_boards = set()
+    # Track boards that have been printed for the current best_total
+    seen_best_boards = set()
     with concurrent.futures.ProcessPoolExecutor() as executor:
         future_to_info = {
             executor.submit(
@@ -279,24 +280,32 @@ def parallel_first_beam(board, rack, words, wordset, original_bonus, beam_width=
             _, word, direction, row, col = play
             color = "\033[92m" if score == max(r[0] for r in results + [(score, None, None)]) else "\033[94m"
             reset = "\033[0m"
-            log_with_time(f"{color}Move {idx+1}/{len(first_choices)}: {word} at ({row},{col}) {direction} → final score: {score} (duration: {elapsed:.3f}s){reset}")
-            vlog(f"beam_from_first {idx+1}", start)
+            status_msg = ""
+            print_board_flag = False
             if moves is not None:
                 results.append((score, board_result, moves))
                 board_key = tuple(tuple(r) for r in board_result)
-                if board_key not in seen_boards:
-                    seen_boards.add(board_key)
-                    if score > best_total:
-                        best_total = score
-                        with PRINT_LOCK:
-                            print(f"\nNew best score found: {score}", flush=True)
-                        print_board(board_result)
-                        best_results = [(score, board_result, moves)]
-                    elif score == best_total:
-                        with PRINT_LOCK:
-                            print(f"\nEqual best score found: {score}", flush=True)
-                        print_board(board_result)
+                if score > best_total:
+                    best_total = score
+                    best_results = [(score, board_result, moves)]
+                    seen_best_boards = {board_key}
+                    status_msg = " New High Score!"
+                    print_board_flag = True
+                elif score == best_total:
+                    if board_key not in seen_best_boards:
+                        seen_best_boards.add(board_key)
+                        status_msg = " Equal high score."
+                        print_board_flag = True
                         best_results.append((score, board_result, moves))
+            log_with_time(f"{color}Move {idx+1}/{len(first_choices)}: {word} at ({row},{col}) {direction} → final score: {score} (duration: {elapsed:.3f}s){status_msg}{reset}")
+            if print_board_flag:
+                with PRINT_LOCK:
+                    if status_msg.strip() == "New High Score!":
+                        print(f"\nNew best score found: {score}", flush=True)
+                    else:
+                        print(f"\nEqual best score found: {score}", flush=True)
+                print_board(board_result)
+            vlog(f"beam_from_first {idx+1}", start)
 
     if not best_results:
         return 0, []
