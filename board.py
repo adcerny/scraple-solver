@@ -8,13 +8,16 @@ from utils import N, LETTER_SCORES, log_with_time, vlog, PRINT_LOCK
 def get_letter_mask(board):
     return [[len(cell) == 1 for cell in row] for row in board]
 
-def print_board(board):
-    """Thread-safe printing of a board."""
+def print_board(board, bonus=None):
+    """Thread-safe printing of a board. If ``bonus`` is provided, it should
+    represent the original bonus layout so that tiles can be colored based on
+    the square they occupy."""
     with PRINT_LOCK:
         lines = []
-        for row in board:
+        for r, row in enumerate(board):
             line = []
-            for cell in row:
+            for c, cell in enumerate(row):
+                underlying = bonus[r][c] if bonus else cell
                 if cell == 'DL':
                     line.append(Fore.BLUE + 'DL' + Style.RESET_ALL)
                 elif cell == 'TL':
@@ -24,7 +27,16 @@ def print_board(board):
                 elif cell == 'TW':
                     line.append(Fore.RED + 'TW' + Style.RESET_ALL)
                 elif len(cell) == 1:
-                    line.append(Fore.GREEN + f' {cell}' + Style.RESET_ALL)
+                    color = Fore.GREEN
+                    if underlying == 'DL':
+                        color = Fore.BLUE
+                    elif underlying == 'TL':
+                        color = Fore.CYAN
+                    elif underlying == 'DW':
+                        color = Fore.MAGENTA
+                    elif underlying == 'TW':
+                        color = Fore.RED
+                    line.append(color + f' {cell}' + Style.RESET_ALL)
                 else:
                     line.append(Style.DIM + '··' + Style.RESET_ALL)
             lines.append(' '.join(line))

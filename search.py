@@ -304,7 +304,7 @@ def parallel_first_beam(board, rack, words, wordset, original_bonus, beam_width=
                         print(f"\nNew best score found: {score}", flush=True)
                     else:
                         print(f"\nEqual best score found: {score}", flush=True)
-                print_board(board_result)
+                print_board(board_result, original_bonus)
             vlog(f"beam_from_first {idx+1}", start)
 
     if not best_results:

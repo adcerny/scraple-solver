@@ -93,7 +93,7 @@ def run_solver():
             log_with_time(f"  {w} at ({r0},{c0}) {d} scoring {sc}")
         log_with_time("Final simulated board:")
         print()
-        print_board(best_board)
+        print_board(best_board, original_bonus)
         print(f"Final board score: {cached_board_score(board_to_tuple(best_board), board_to_tuple(original_bonus))}")
         print("-" * 40)
 
