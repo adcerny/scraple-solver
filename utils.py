@@ -53,7 +53,7 @@ def rainbow(text):
     out.append(Style.RESET_ALL)
     return ''.join(out)
 
-def log_with_time(msg, color=Fore.LIGHTGREEN_EX):
+def log_with_time(msg, color=Fore.LIGHTBLUE_EX):
     """Print ``msg`` with a timestamp."""
     global start_time
     elapsed = time.time() - start_time

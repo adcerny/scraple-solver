@@ -3,6 +3,7 @@
 from collections import Counter
 import concurrent.futures
 import time
+from colorama import Fore, Style
 from utils import log_with_time, vlog, N, PRINT_LOCK, rainbow
 from board import board_valid, place_word, print_board
 from score_cache import cached_board_score, board_to_tuple
@@ -278,8 +279,6 @@ def parallel_first_beam(board, rack, words, wordset, original_bonus, beam_width=
             score, board_result, moves = future.result()
             elapsed = time.time() - start
             _, word, direction, row, col = play
-            color = "\033[92m" if score == max(r[0] for r in results + [(score, None, None)]) else "\033[94m"
-            reset = "\033[0m"
             status_msg = ""
             print_board_flag = False
             if moves is not None:
@@ -297,13 +296,17 @@ def parallel_first_beam(board, rack, words, wordset, original_bonus, beam_width=
                         status_msg = " Equal high score."
                         print_board_flag = True
                         best_results.append((score, board_result, moves))
-            log_with_time(f"{color}Move {idx+1}/{len(first_choices)}: {word} at ({row},{col}) {direction} → final score: {score} (duration: {elapsed:.3f}s){status_msg}{reset}")
+            msg_color = Fore.GREEN if status_msg else Fore.LIGHTBLUE_EX
+            log_with_time(
+                f"Move {idx+1}/{len(first_choices)}: {word} at ({row},{col}) {direction} → final score: {score} (duration: {elapsed:.3f}s){status_msg}",
+                color=msg_color,
+            )
             if print_board_flag:
                 with PRINT_LOCK:
                     if status_msg.strip() == "New High Score!":
                         print("\n" + rainbow(f"New best score found: {score}"), flush=True)
                     else:
-                        print(f"\n\033[95mEqual best score found: {score}\033[0m", flush=True)
+                        print(f"\n{Fore.MAGENTA}Equal best score found: {score}{Style.RESET_ALL}", flush=True)
                 print_board(board_result, original_bonus)
             vlog(f"beam_from_first {idx+1}", start)
 
