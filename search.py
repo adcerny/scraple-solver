@@ -4,7 +4,7 @@ from collections import Counter
 import concurrent.futures
 import time
 from colorama import Fore, Style
-from utils import log_with_time, vlog, N, PRINT_LOCK, rainbow
+from utils import log_with_time, vlog, N, PRINT_LOCK
 from board import board_valid, place_word, print_board
 from score_cache import cached_board_score, board_to_tuple
 
@@ -304,7 +304,7 @@ def parallel_first_beam(board, rack, words, wordset, original_bonus, beam_width=
             if print_board_flag:
                 with PRINT_LOCK:
                     if status_msg.strip() == "New High Score!":
-                        print("\n" + rainbow(f"New best score found: {score}"), flush=True)
+                        print(f"\n{Fore.GREEN}New best score found: {score}{Style.RESET_ALL}", flush=True)
                     else:
                         print(f"\n{Fore.MAGENTA}Equal best score found: {score}{Style.RESET_ALL}", flush=True)
                 print_board(board_result, original_bonus)

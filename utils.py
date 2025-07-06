@@ -31,27 +31,8 @@ LETTER_SCORES = {
 VERBOSE = False
 start_time = None
 
-# Predefined colors for rainbow text
-RAINBOW_COLORS = [
-    Fore.RED,
-    Fore.YELLOW,
-    Fore.GREEN,
-    Fore.CYAN,
-    Fore.BLUE,
-    Fore.MAGENTA,
-]
-
 # Lock used for synchronized printing across threads
 PRINT_LOCK = threading.Lock()
-
-def rainbow(text):
-    """Return text colored sequentially with rainbow colors."""
-    out = []
-    for i, ch in enumerate(text):
-        color = RAINBOW_COLORS[i % len(RAINBOW_COLORS)]
-        out.append(color + ch)
-    out.append(Style.RESET_ALL)
-    return ''.join(out)
 
 def log_with_time(msg, color=Fore.LIGHTBLUE_EX):
     """Print ``msg`` with a timestamp."""
