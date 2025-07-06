@@ -2,6 +2,9 @@
 
 import time
 import threading
+from colorama import Fore, Style, init
+
+init()
 
 # Board dimension
 N = 5
@@ -31,13 +34,15 @@ start_time = None
 # Lock used for synchronized printing across threads
 PRINT_LOCK = threading.Lock()
 
-def log_with_time(msg):
+def log_with_time(msg, color=Fore.LIGHTBLUE_EX):
+    """Print ``msg`` with a timestamp."""
     global start_time
     elapsed = time.time() - start_time
     mins = int(elapsed // 60)
     secs = elapsed % 60
+    timestamp = Style.DIM + f"[{mins:02}:{secs:06.3f}]" + Style.RESET_ALL
     with PRINT_LOCK:
-        print(f"[{mins:02}:{secs:06.3f}] {msg}", flush=True)
+        print(f"{timestamp} {color}{msg}{Style.RESET_ALL}", flush=True)
 
 def vlog(msg, t0=None):
     if VERBOSE:

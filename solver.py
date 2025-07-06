@@ -6,6 +6,7 @@ import requests
 from collections import Counter
 import utils
 from utils import N, MAPPING, log_with_time, vlog
+from colorama import Fore
 from board import print_board, compute_board_score
 import time  # Ensure time is available in imported modules
 from functools import lru_cache
@@ -82,18 +83,21 @@ def run_solver():
         log_with_time("No valid full simulation found.")
         return
 
-    log_with_time(f"Found {len(best_results)} highest scoring solution(s) with score {best_total}:")
+    log_with_time(
+        f"Found {len(best_results)} highest scoring solution(s) with score {best_total}:",
+        color=Fore.GREEN,
+    )
     unique_count = 0
     for idx, (score, best_board, best_moves) in enumerate(best_results, 1):
         unique_count += 1
-        log_with_time(f"Solution {unique_count}:")
-        log_with_time("Move sequence:")
+        log_with_time(f"Solution {unique_count}:", color=Fore.GREEN)
+        log_with_time("Move sequence:", color=Fore.GREEN)
         for move in best_moves:
             sc, w, d, r0, c0 = move
-            log_with_time(f"  {w} at ({r0},{c0}) {d} scoring {sc}")
-        log_with_time("Final simulated board:")
+            log_with_time(f"  {w} at ({r0},{c0}) {d} scoring {sc}", color=Fore.GREEN)
+        log_with_time("Final simulated board:", color=Fore.GREEN)
         print()
-        print_board(best_board)
+        print_board(best_board, original_bonus)
         print(f"Final board score: {cached_board_score(board_to_tuple(best_board), board_to_tuple(original_bonus))}")
         print("-" * 40)
 
