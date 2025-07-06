@@ -4,7 +4,7 @@ from collections import Counter
 import concurrent.futures
 import time
 from colorama import Fore, Style
-from utils import log_with_time, vlog, N, PRINT_LOCK
+from utils import log_with_time, vlog, N, PRINT_LOCK, VERBOSE
 from board import board_valid, place_word, print_board
 from score_cache import cached_board_score, board_to_tuple
 
@@ -297,8 +297,9 @@ def parallel_first_beam(board, rack, words, wordset, original_bonus, beam_width=
                         print_board_flag = True
                         best_results.append((score, board_result, moves))
             msg_color = Fore.GREEN if status_msg else Fore.LIGHTBLUE_EX
+            duration_msg = f" (duration: {elapsed:.3f}s)" if VERBOSE else ""
             log_with_time(
-                f"Move {idx+1}/{len(first_choices)}: {word} at ({row},{col}) {direction} → final score: {score} (duration: {elapsed:.3f}s){status_msg}",
+                f"Move {idx+1}/{len(first_choices)}: {word} at ({row},{col}) {direction} → final score: {score}{duration_msg}{status_msg}",
                 color=msg_color,
             )
             if print_board_flag:
