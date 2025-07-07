@@ -4,7 +4,6 @@ import time
 import threading
 import json
 from colorama import Fore, Style, init
-import os
 
 init()
 

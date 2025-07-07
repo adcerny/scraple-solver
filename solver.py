@@ -5,13 +5,14 @@ import time
 import requests
 from collections import Counter
 import utils
-from utils import N, MAPPING, log_with_time, vlog
+from utils import N, MAPPING, log_with_time, vlog, LETTER_SCORES
 from colorama import Fore
 from board import print_board, compute_board_score
 import time  # Ensure time is available in imported modules
 from functools import lru_cache
 from score_cache import board_to_tuple, cached_board_score
 import json
+from datetime import datetime
 
 # Ensure search module has access to time
 import search
@@ -32,7 +33,26 @@ def fetch_board_and_rack():
     for bonus, (r, c) in data['bonusTilePositions'].items():
         board[r][c] = MAPPING[bonus]
     rack = [t['letter'].upper() for t in data['letters']]
+
+    # Log the puzzle to a file
+    board_data = resp.text  # Exact string format from API
+    rack_data = ','.join(rack)
+    log_puzzle_to_file(board_data, rack_data)
+
     return board, rack
+
+def log_puzzle_to_file(board_data, rack_data):
+    """Logs the day's puzzle (board and rack) to a file."""
+    today = datetime.now().strftime('%Y-%m-%d')
+    log_dir = 'logs'
+    os.makedirs(log_dir, exist_ok=True)
+    log_file = os.path.join(log_dir, f'{today}-puzzle.log')
+
+    with open(log_file, 'w') as f:
+        f.write('Board:\n')
+        f.write(board_data + '\n')
+        f.write('Rack:\n')
+        f.write(rack_data + '\n')
 
 def load_dictionary():
     t0 = time.time()
@@ -66,7 +86,20 @@ def run_solver():
     import score_cache
     score_cache.CACHE_DISABLED = args.no_cache
 
+    # Fetch the board and rack
     board, rack = fetch_board_and_rack()
+
+    # Log the puzzle if the argument is provided
+    if args.log_puzzle:
+        import json
+        api_response = json.dumps({
+            "letters": [{"letter": t.upper(), "points": LETTER_SCORES[t.upper()]} for t in rack],
+            "bonusTilePositions": {bonus: pos for bonus, pos in MAPPING.items()},
+            "date": time.strftime('%Y-%m-%d'),
+            "displayDate": time.strftime('%B %d, %Y')
+        })
+        utils.log_puzzle_to_file(api_response)
+
     print("Today's Board:")
     print_board(board)
     print("Rack:", ' '.join(rack))
