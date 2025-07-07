@@ -11,7 +11,7 @@ from board import print_board, compute_board_score
 import time  # Ensure time is available in imported modules
 from functools import lru_cache
 from score_cache import board_to_tuple, cached_board_score
-import os
+import json
 from datetime import datetime
 
 # Ensure search module has access to time
@@ -76,7 +76,7 @@ def run_solver():
     parser.add_argument('--depth', type=int, default=20, help='Maximum number of moves to search (default: 20)')
     parser.add_argument('--verbose', action='store_true', help='Enable verbose logging')
     parser.add_argument('--no-cache', action='store_true', help='Disable board score caching')
-    parser.add_argument('--log-puzzle', action='store_true', help='Save the day\'s puzzle to a log file')
+    parser.add_argument('--log-puzzle', action='store_true', help='Save the day\'s puzzle and best result to a JSON log file')
     args = parser.parse_args()
 
     utils.start_time = time.time()
@@ -105,6 +105,14 @@ def run_solver():
     print("Rack:", ' '.join(rack))
     original_bonus = [row[:] for row in board]
     words, wordset = load_dictionary()
+
+    # Save the API response for logging
+    api_response = None
+    if args.log_puzzle:
+        # Fetch the raw API response for logging
+        resp = requests.get(API_URL)
+        resp.raise_for_status()
+        api_response = resp.text
 
     beam_width = args.beam_width
     first_moves = args.first_moves
@@ -146,6 +154,15 @@ def run_solver():
         print_board(best_board, original_bonus)
         print(f"Final board score: {cached_board_score(board_to_tuple(best_board), board_to_tuple(original_bonus))}")
         print("-" * 40)
+
+    # Log the puzzle and best result if requested
+    if args.log_puzzle and best_results:
+        best_score, best_board, _ = best_results[0]
+        best_result = {
+            "score": best_score,
+            "final_board": best_board
+        }
+        utils.log_puzzle_to_file(api_response, best_result=best_result)
 
     total_elapsed = time.time() - utils.start_time
     print(f"Total time: {int(total_elapsed // 60)}m {total_elapsed % 60:.1f}s")

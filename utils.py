@@ -2,7 +2,7 @@
 
 import time
 import threading
-import os
+import json
 from colorama import Fore, Style, init
 
 init()
@@ -53,17 +53,46 @@ def vlog(msg, t0=None):
         else:
             log_with_time(msg)
 
-def log_puzzle_to_file(api_response):
-    """Log the day's puzzle (board and rack) to a dated file in the `logs` directory."""
-    # Ensure logs directory exists
+def log_puzzle_to_file(api_response, best_result=None):
+    """Log the day's puzzle (board, rack, and optionally best result) to a dated JSON file in the `logs` directory.
+    If the file exists, update best_result only if the new score is higher."""
     logs_dir = os.path.join(os.getcwd(), 'logs')
     os.makedirs(logs_dir, exist_ok=True)
+    log_file = os.path.join(logs_dir, f"puzzle_{time.strftime('%Y-%m-%d')}.json")
 
-    # Create a dated log file
-    log_file = os.path.join(logs_dir, f"puzzle_{time.strftime('%Y-%m-%d')}.log")
+    # Parse the API response if it's a string
+    if isinstance(api_response, str):
+        try:
+            api_data = json.loads(api_response)
+        except Exception:
+            api_data = {"raw": api_response}
+    else:
+        api_data = api_response
 
-    # Write the API response to the log file
+    log_data = {"puzzle": api_data}
+
+    # If file exists, load and compare best_result
+    if os.path.exists(log_file):
+        try:
+            with open(log_file, 'r') as f:
+                existing = json.load(f)
+            log_data = existing
+        except Exception:
+            pass
+
+    if best_result:
+        existing_best = log_data.get("best_result")
+        if not existing_best or best_result["score"] > existing_best.get("score", float('-inf')):
+            log_data["best_result"] = best_result
+            log_with_time(f"Updated best_result in {log_file}", color=Fore.GREEN)
+        else:
+            log_with_time(f"Existing best_result in {log_file} has equal or higher score; not updated.", color=Fore.YELLOW)
+    else:
+        log_with_time(f"Puzzle logged to {log_file}", color=Fore.GREEN)
+
+    # Ensure 'human_best' key exists for manual entry
+    if 'human_best' not in log_data:
+        log_data['human_best'] = {}
+
     with open(log_file, 'w') as f:
-        f.write(api_response)
-
-    log_with_time(f"Puzzle logged to {log_file}", color=Fore.GREEN)
+        json.dump(log_data, f, indent=2)
