@@ -127,7 +127,16 @@ def validate_new_words(board, wordset, w, r0, c0, d):
                     return False
     return True
 
-def find_best(board, rack_count, words, wordset, touch=None, original_bonus=None, top_k=10):
+def find_best(
+    board,
+    rack_count,
+    words,
+    wordset,
+    touch=None,
+    original_bonus=None,
+    top_k=10,
+    per_word=1,
+):
     """Return the best ``top_k`` placements across all words.
 
     Previously this function returned only a single best placement which meant
@@ -142,6 +151,7 @@ def find_best(board, rack_count, words, wordset, touch=None, original_bonus=None
     candidates = []
     for w in words:
         L = len(w)
+        word_candidates = []
         for r in range(N):
             for c in range(N-L+1):
                 if not is_valid_placement(w, board, rack_count, wordset, r, c, 'H'): continue
@@ -155,7 +165,7 @@ def find_best(board, rack_count, words, wordset, touch=None, original_bonus=None
                 if not validate_new_words(board_copy, wordset, w, r, c, 'H'): continue
                 move_score = cached_board_score(board_to_tuple(board_copy), board_to_tuple(original_bonus))
                 bonus_count = sum(1 for i in range(L) if board[r][c+i] in {'DL','TL','DW','TW'})
-                candidates.append((move_score, bonus_count, L, w, 'H', r, c))
+                word_candidates.append((move_score, bonus_count, L, w, 'H', r, c))
                 checked += 1
         for r in range(N-L+1):
             for c in range(N):
@@ -170,8 +180,10 @@ def find_best(board, rack_count, words, wordset, touch=None, original_bonus=None
                 if not validate_new_words(board_copy, wordset, w, r, c, 'V'): continue
                 move_score = cached_board_score(board_to_tuple(board_copy), board_to_tuple(original_bonus))
                 bonus_count = sum(1 for i in range(L) if board[r+i][c] in {'DL','TL','DW','TW'})
-                candidates.append((move_score, bonus_count, L, w, 'V', r, c))
+                word_candidates.append((move_score, bonus_count, L, w, 'V', r, c))
                 checked += 1
+        word_candidates.sort(reverse=True)
+        candidates.extend(word_candidates[:per_word])
     # Sort by move_score, then bonus_count, then word length (descending)
     candidates.sort(reverse=True)
     vlog(
@@ -257,7 +269,17 @@ def beam_from_first(play, board, rack_count, words, wordset, original_bonus, bea
     )
     return (score, final_board, [(play[0], play_word, play[2], play[3], play[4])] + (moves if moves else []))
 
-def parallel_first_beam(board, rack, words, wordset, original_bonus, beam_width=5, first_moves=None, max_moves=20):
+def parallel_first_beam(
+    board,
+    rack,
+    words,
+    wordset,
+    original_bonus,
+    beam_width=5,
+    first_moves=None,
+    max_moves=20,
+    positions_per_word=1,
+):
     """Search game states starting from multiple first moves in parallel.
 
     Parameters
@@ -275,9 +297,12 @@ def parallel_first_beam(board, rack, words, wordset, original_bonus, beam_width=
     beam_width : int, optional
         Number of states kept at each depth during beam search.
     first_moves : int, optional
-        Number of candidate opening moves to explore (default ``beam_width``).
+        Number of starting words to explore (default ``beam_width``).
     max_moves : int, optional
         Maximum depth of the search.
+    positions_per_word : int, optional
+        How many starting placements to keep for each word when generating
+        opening move candidates.
     """
 
     rack_count = Counter(rack)
@@ -289,15 +314,23 @@ def parallel_first_beam(board, rack, words, wordset, original_bonus, beam_width=
     log_with_time(f"Pruned word list: {len(pruned_words)} words")
     vlog("Initial prune_words", t0)
     t1 = time.time()
-    first_choices = find_best(
-        board,
-        rack_count,
-        pruned_words,
-        wordset,
-        None,
-        original_bonus,
-        top_k=first_moves,
-    )
+    per_word_moves = []
+    for w in pruned_words:
+        placements = find_best(
+            board,
+            rack_count,
+            [w],
+            wordset,
+            None,
+            original_bonus,
+            top_k=positions_per_word,
+            per_word=positions_per_word,
+        )
+        if placements:
+            per_word_moves.append((placements[0][0], placements))
+    per_word_moves.sort(reverse=True, key=lambda x: x[0])
+    selected = per_word_moves[:first_moves]
+    first_choices = [p for _, moves in selected for p in moves]
     vlog("find_best for first moves", t1)
 
     results = []
