@@ -127,7 +127,8 @@ def validate_new_words(board, wordset, w, r0, c0, d):
                     return False
     return True
 
-def find_best(board, rack_count, words, wordset, touch=None, original_bonus=None, top_k=10):
+def find_best(board, rack_count, words, wordset, touch=None, original_bonus=None,
+              top_k=10, per_word_limit=None):
     """Return the best ``top_k`` placements across all words.
 
     Previously this function returned only a single best placement which meant
@@ -135,6 +136,10 @@ def find_best(board, rack_count, words, wordset, touch=None, original_bonus=None
     discarded.  To explore a richer search space we now return a list of the
     ``top_k`` scoring candidates.  Each entry is a tuple of
     ``(score, word, direction, row, col)`` ordered by descending score.
+
+    If ``per_word_limit`` is given, only the top N placements for each word are
+    kept before taking the overall best ``top_k`` candidates.  This can be used
+    to ensure that multiple starting positions are considered for each word.
     """
 
     t0 = time.time()
@@ -142,6 +147,7 @@ def find_best(board, rack_count, words, wordset, touch=None, original_bonus=None
     candidates = []
     for w in words:
         L = len(w)
+        word_candidates = []
         for r in range(N):
             for c in range(N-L+1):
                 if not is_valid_placement(w, board, rack_count, wordset, r, c, 'H'): continue
@@ -155,7 +161,7 @@ def find_best(board, rack_count, words, wordset, touch=None, original_bonus=None
                 if not validate_new_words(board_copy, wordset, w, r, c, 'H'): continue
                 move_score = cached_board_score(board_to_tuple(board_copy), board_to_tuple(original_bonus))
                 bonus_count = sum(1 for i in range(L) if board[r][c+i] in {'DL','TL','DW','TW'})
-                candidates.append((move_score, bonus_count, L, w, 'H', r, c))
+                word_candidates.append((move_score, bonus_count, L, w, 'H', r, c))
                 checked += 1
         for r in range(N-L+1):
             for c in range(N):
@@ -170,8 +176,12 @@ def find_best(board, rack_count, words, wordset, touch=None, original_bonus=None
                 if not validate_new_words(board_copy, wordset, w, r, c, 'V'): continue
                 move_score = cached_board_score(board_to_tuple(board_copy), board_to_tuple(original_bonus))
                 bonus_count = sum(1 for i in range(L) if board[r+i][c] in {'DL','TL','DW','TW'})
-                candidates.append((move_score, bonus_count, L, w, 'V', r, c))
+                word_candidates.append((move_score, bonus_count, L, w, 'V', r, c))
                 checked += 1
+        word_candidates.sort(reverse=True)
+        if per_word_limit is not None:
+            word_candidates = word_candidates[:per_word_limit]
+        candidates.extend(word_candidates)
     # Sort by move_score, then bonus_count, then word length (descending)
     candidates.sort(reverse=True)
     vlog(
@@ -257,7 +267,8 @@ def beam_from_first(play, board, rack_count, words, wordset, original_bonus, bea
     )
     return (score, final_board, [(play[0], play_word, play[2], play[3], play[4])] + (moves if moves else []))
 
-def parallel_first_beam(board, rack, words, wordset, original_bonus, beam_width=5, first_moves=None, max_moves=20):
+def parallel_first_beam(board, rack, words, wordset, original_bonus, beam_width=5,
+                        first_moves=None, max_moves=20, per_word_limit=1):
     """Search game states starting from multiple first moves in parallel.
 
     Parameters
@@ -276,6 +287,8 @@ def parallel_first_beam(board, rack, words, wordset, original_bonus, beam_width=
         Number of states kept at each depth during beam search.
     first_moves : int, optional
         Number of candidate opening moves to explore (default ``beam_width``).
+    per_word_limit : int, optional
+        How many placements to keep for each word when generating opening moves.
     max_moves : int, optional
         Maximum depth of the search.
     """
@@ -297,6 +310,7 @@ def parallel_first_beam(board, rack, words, wordset, original_bonus, beam_width=
         None,
         original_bonus,
         top_k=first_moves,
+        per_word_limit=per_word_limit,
     )
     vlog("find_best for first moves", t1)
 
