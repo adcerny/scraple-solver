@@ -128,6 +128,15 @@ def validate_new_words(board, wordset, w, r0, c0, d):
     return True
 
 def find_best(board, rack_count, words, wordset, touch=None, original_bonus=None, top_k=10):
+    """Return the best ``top_k`` placements across all words.
+
+    Previously this function returned only a single best placement which meant
+    that once a word was chosen its other potentially promising placements were
+    discarded.  To explore a richer search space we now return a list of the
+    ``top_k`` scoring candidates.  Each entry is a tuple of
+    ``(score, word, direction, row, col)`` ordered by descending score.
+    """
+
     t0 = time.time()
     checked = 0
     candidates = []
@@ -165,12 +174,18 @@ def find_best(board, rack_count, words, wordset, touch=None, original_bonus=None
                 checked += 1
     # Sort by move_score, then bonus_count, then word length (descending)
     candidates.sort(reverse=True)
-    vlog(f"find_best checked {checked} placements for {len(words)} words, returning top {top_k}", t0)
-    # Early pruning: only return the top_k best candidates
-    if candidates:
-        best = candidates[0]
-        return (best[0], best[3], best[4], best[5], best[6])
-    return (float('-inf'), None, None, None, None)
+    vlog(
+        f"find_best checked {checked} placements for {len(words)} words, returning top {top_k}",
+        t0,
+    )
+
+    if not candidates:
+        return []
+
+    top_moves = [
+        (sc, w, d, r, c) for sc, _, _, w, d, r, c in candidates[:top_k]
+    ]
+    return top_moves
 
 def full_beam_search(board, rack_count, words, wordset, placed, original_bonus, beam_width=5, max_moves=20):
     state = [(0, board, rack_count, set(placed), [], words)]
@@ -185,37 +200,39 @@ def full_beam_search(board, rack_count, words, wordset, placed, original_bonus, 
         for score, b, rc, pl, moves, rem_words in state:
             touch = None if not moves else pl
             pruned_words = prune_words(rem_words, rc, b)
-            temp_words = pruned_words.copy()
-            for _ in range(beam_width):
-                sc, w, d, r0, c0 = find_best(b, rc, temp_words, wordset, touch, original_bonus)
-                if not w:
-                    break
+            candidates = find_best(
+                b, rc, pruned_words, wordset, touch, original_bonus, top_k=beam_width
+            )
+            for sc, w, d, r0, c0 in candidates:
                 can_play, rack_after = can_play_word_on_board(w, r0, c0, d, b, rc)
                 if not can_play:
-                    try:
-                        while True:
-                            temp_words.remove(w)
-                    except ValueError:
-                        pass
                     continue
                 b2 = [row[:] for row in b]
                 place_word(b2, w, r0, c0, d)
                 if not validate_new_words(b2, wordset, w, r0, c0, d):
-                    try:
-                        while True:
-                            temp_words.remove(w)
-                    except ValueError:
-                        pass
                     continue
-                pl2 = {(r, c) for r in range(N) for c in range(N) if len(b2[r][c]) == 1}
-                next_words = temp_words.copy()
+                pl2 = {
+                    (r, c)
+                    for r in range(N)
+                    for c in range(N)
+                    if len(b2[r][c]) == 1
+                }
+                next_words = pruned_words.copy()
                 try:
                     while True:
                         next_words.remove(w)
                 except ValueError:
                     pass
-                next_state.append((cached_board_score(board_to_tuple(b2), board_to_tuple(original_bonus)), b2, rack_after, pl2, moves + [(sc, w, d, r0, c0)], next_words))
-                temp_words = next_words
+                next_state.append(
+                    (
+                        cached_board_score(board_to_tuple(b2), board_to_tuple(original_bonus)),
+                        b2,
+                        rack_after,
+                        pl2,
+                        moves + [(sc, w, d, r0, c0)],
+                        next_words,
+                    )
+                )
         vlog(f"full_beam_search move {move_num}: {len(state)} states expanded to {len(next_state)}", t0)
         state = sorted(next_state, key=lambda x: x[0], reverse=True)[:beam_width]
         if state and state[0][0] > best_score:
@@ -240,27 +257,48 @@ def beam_from_first(play, board, rack_count, words, wordset, original_bonus, bea
     )
     return (score, final_board, [(play[0], play_word, play[2], play[3], play[4])] + (moves if moves else []))
 
-def parallel_first_beam(board, rack, words, wordset, original_bonus, beam_width=5, max_moves=20):
+def parallel_first_beam(board, rack, words, wordset, original_bonus, beam_width=5, first_moves=None, max_moves=20):
+    """Search game states starting from multiple first moves in parallel.
+
+    Parameters
+    ----------
+    board : list[list[str]]
+        The initial board configuration.
+    rack : list[str]
+        Letters available to play.
+    words : list[str]
+        Allowed dictionary words.
+    wordset : set[str]
+        Set version of ``words`` for fast lookup.
+    original_bonus : list[list[str]]
+        Board of bonus squares used for scoring.
+    beam_width : int, optional
+        Number of states kept at each depth during beam search.
+    first_moves : int, optional
+        Number of candidate opening moves to explore (default ``beam_width``).
+    max_moves : int, optional
+        Maximum depth of the search.
+    """
+
     rack_count = Counter(rack)
     placed = set()
+    if first_moves is None:
+        first_moves = beam_width
     t0 = time.time()
     pruned_words = prune_words(words, rack_count, board)
     log_with_time(f"Pruned word list: {len(pruned_words)} words")
     vlog("Initial prune_words", t0)
-    temp_words = pruned_words.copy()
-    first_choices = []
-    for _ in range(beam_width):
-        t1 = time.time()
-        sc, w, d, r0, c0 = find_best(board, rack_count, temp_words, wordset, None, original_bonus)
-        vlog(f"find_best for first move {_+1}", t1)
-        if not w:
-            break
-        first_choices.append((sc, w, d, r0, c0))
-        try:
-            while True:
-                temp_words.remove(w)
-        except ValueError:
-            pass
+    t1 = time.time()
+    first_choices = find_best(
+        board,
+        rack_count,
+        pruned_words,
+        wordset,
+        None,
+        original_bonus,
+        top_k=first_moves,
+    )
+    vlog("find_best for first moves", t1)
 
     results = []
     best_total = float('-inf')
