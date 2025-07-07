@@ -4,7 +4,7 @@ from collections import Counter
 import concurrent.futures
 import time
 from colorama import Fore, Style
-from utils import log_with_time, vlog, N, PRINT_LOCK, VERBOSE
+from utils import log_with_time, vlog, N, PRINT_LOCK, VERBOSE, LETTER_SCORES
 from board import board_valid, place_word, print_board
 from score_cache import cached_board_score, board_to_tuple
 
@@ -199,8 +199,18 @@ def find_best(
     ]
     return top_moves
 
-def full_beam_search(board, rack_count, words, wordset, placed, original_bonus, beam_width=5, max_moves=20):
-    state = [(0, board, rack_count, set(placed), [], words)]
+def full_beam_search(
+    board,
+    rack_count,
+    words,
+    wordset,
+    placed,
+    original_bonus,
+    beam_width=5,
+    max_moves=20,
+    positions_per_word=1,
+):
+    state = [(0, 0, board, rack_count, set(placed), [], words)]
     best_score = 0
     best_board = None
     best_moves = None
@@ -209,11 +219,18 @@ def full_beam_search(board, rack_count, words, wordset, placed, original_bonus, 
     while state and move_num <= max_moves:
         t0 = time.time()
         next_state = []
-        for score, b, rc, pl, moves, rem_words in state:
+        for heuristic, board_score, b, rc, pl, moves, rem_words in state:
             touch = None if not moves else pl
             pruned_words = prune_words(rem_words, rc, b)
             candidates = find_best(
-                b, rc, pruned_words, wordset, touch, original_bonus, top_k=beam_width
+                b,
+                rc,
+                pruned_words,
+                wordset,
+                touch,
+                original_bonus,
+                top_k=beam_width * positions_per_word,
+                per_word=positions_per_word,
             )
             for sc, w, d, r0, c0 in candidates:
                 can_play, rack_after = can_play_word_on_board(w, r0, c0, d, b, rc)
@@ -235,9 +252,15 @@ def full_beam_search(board, rack_count, words, wordset, placed, original_bonus, 
                         next_words.remove(w)
                 except ValueError:
                     pass
+                board_score = cached_board_score(
+                    board_to_tuple(b2), board_to_tuple(original_bonus)
+                )
+                rack_penalty = sum(LETTER_SCORES[ch] for ch in rack_after)
+                heuristic = board_score - rack_penalty
                 next_state.append(
                     (
-                        cached_board_score(board_to_tuple(b2), board_to_tuple(original_bonus)),
+                        heuristic,
+                        board_score,
                         b2,
                         rack_after,
                         pl2,
@@ -247,14 +270,24 @@ def full_beam_search(board, rack_count, words, wordset, placed, original_bonus, 
                 )
         vlog(f"full_beam_search move {move_num}: {len(state)} states expanded to {len(next_state)}", t0)
         state = sorted(next_state, key=lambda x: x[0], reverse=True)[:beam_width]
-        if state and state[0][0] > best_score:
-            best_score = state[0][0]
-            best_board = state[0][1]
-            best_moves = state[0][4]
+        if state and state[0][1] > best_score:
+            best_score = state[0][1]
+            best_board = state[0][2]
+            best_moves = state[0][5]
         move_num += 1
     return best_score, best_board, best_moves
 
-def beam_from_first(play, board, rack_count, words, wordset, original_bonus, beam_width, max_moves=20):
+def beam_from_first(
+    play,
+    board,
+    rack_count,
+    words,
+    wordset,
+    original_bonus,
+    beam_width,
+    max_moves=20,
+    positions_per_word=1,
+):
     play_word = play[1]
     words_for_sim = [w for w in words if w != play_word]
     board_copy = [row[:] for row in board]
@@ -273,7 +306,15 @@ def beam_from_first(play, board, rack_count, words, wordset, original_bonus, bea
         print(f"[DEBUG] Score after first move: {sc}")
     placed_copy = {(r, c) for r in range(N) for c in range(N) if len(board_copy[r][c]) == 1}
     score, final_board, moves = full_beam_search(
-        board_copy, rack_after_first, words_for_sim, wordset, placed_copy, original_bonus, beam_width=beam_width, max_moves=max_moves
+        board_copy,
+        rack_after_first,
+        words_for_sim,
+        wordset,
+        placed_copy,
+        original_bonus,
+        beam_width=beam_width,
+        max_moves=max_moves,
+        positions_per_word=positions_per_word,
     )
     if play_word == "HEAVY" and ((play[3], play[4], play[2]) == (0,3,'V') or (play[3], play[4], play[2]) == (0,2,'V')):
         from board import print_board
@@ -320,8 +361,9 @@ def parallel_first_beam(
     max_moves : int, optional
         Maximum depth of the search.
     positions_per_word : int, optional
-        How many starting placements to keep for each word when generating
-        opening move candidates.
+        How many placements to keep for each word when generating move
+        candidates.  This applies both to the opening move selection and to
+        subsequent moves during the beam search.
     """
 
     rack_count = Counter(rack)
@@ -360,7 +402,16 @@ def parallel_first_beam(
     with concurrent.futures.ProcessPoolExecutor() as executor:
         future_to_info = {
             executor.submit(
-                beam_from_first, play, board, rack_count, pruned_words, wordset, original_bonus, beam_width, max_moves
+                beam_from_first,
+                play,
+                board,
+                rack_count,
+                pruned_words,
+                wordset,
+                original_bonus,
+                beam_width,
+                max_moves,
+                positions_per_word,
             ): (time.time(), play, i)
             for i, play in enumerate(first_choices)
         }
