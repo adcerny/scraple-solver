@@ -13,6 +13,7 @@ from functools import lru_cache
 from score_cache import board_to_tuple, cached_board_score
 import json
 from datetime import datetime
+import os
 
 # Ensure search module has access to time
 import search
