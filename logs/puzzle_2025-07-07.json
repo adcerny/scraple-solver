@@ -1,0 +1,148 @@
+{
+  "puzzle": {
+    "letters": [
+      {
+        "letter": "C",
+        "points": 3
+      },
+      {
+        "letter": "E",
+        "points": 1
+      },
+      {
+        "letter": "Y",
+        "points": 4
+      },
+      {
+        "letter": "E",
+        "points": 1
+      },
+      {
+        "letter": "M",
+        "points": 3
+      },
+      {
+        "letter": "V",
+        "points": 4
+      },
+      {
+        "letter": "S",
+        "points": 1
+      },
+      {
+        "letter": "O",
+        "points": 1
+      },
+      {
+        "letter": "O",
+        "points": 1
+      },
+      {
+        "letter": "O",
+        "points": 1
+      },
+      {
+        "letter": "E",
+        "points": 1
+      },
+      {
+        "letter": "N",
+        "points": 1
+      },
+      {
+        "letter": "E",
+        "points": 1
+      },
+      {
+        "letter": "L",
+        "points": 1
+      },
+      {
+        "letter": "A",
+        "points": 1
+      },
+      {
+        "letter": "H",
+        "points": 4
+      },
+      {
+        "letter": "P",
+        "points": 3
+      },
+      {
+        "letter": "W",
+        "points": 4
+      }
+    ],
+    "bonusTilePositions": {
+      "DOUBLE_LETTER": [
+        3,
+        2
+      ],
+      "TRIPLE_LETTER": [
+        0,
+        1
+      ],
+      "DOUBLE_WORD": [
+        1,
+        2
+      ],
+      "TRIPLE_WORD": [
+        0,
+        2
+      ]
+    },
+    "date": "2025-07-07",
+    "displayDate": "July 7, 2025"
+  },
+  "best_result": {
+    "score": 224,
+    "final_board": [
+      [
+        "E",
+        "M",
+        "C",
+        "E",
+        "E"
+      ],
+      [
+        "P",
+        "O",
+        "H",
+        "",
+        "L"
+      ],
+      [
+        "O",
+        "W",
+        "E",
+        "",
+        ""
+      ],
+      [
+        "S",
+        "",
+        "V",
+        "A",
+        "N"
+      ],
+      [
+        "",
+        "O",
+        "Y",
+        "",
+        ""
+      ]
+    ]
+  },
+  "human_best": {
+  "score": 226,
+  "final_board": [
+    ["", "W", "H", "O", "M"],
+    ["P", "E", "E", "", "O"],
+    ["E", "", "A", "", "L"],
+    ["C", "O", "V", "E", ""],
+    ["", "S", "Y", "N", ""]
+  ]
+}
+}
