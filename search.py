@@ -210,6 +210,7 @@ def full_beam_search(
     max_moves=20,
     positions_per_word=1,
 ):
+    state_limit = beam_width * positions_per_word
     state = [(0, 0, board, rack_count, set(placed), [], words)]
     best_score = 0
     best_board = None
@@ -256,7 +257,7 @@ def full_beam_search(
                     board_to_tuple(b2), board_to_tuple(original_bonus)
                 )
                 rack_penalty = sum(LETTER_SCORES[ch] for ch in rack_after)
-                heuristic = board_score - rack_penalty
+                heuristic = board_score - 0.5 * rack_penalty
                 next_state.append(
                     (
                         heuristic,
@@ -269,7 +270,7 @@ def full_beam_search(
                     )
                 )
         vlog(f"full_beam_search move {move_num}: {len(state)} states expanded to {len(next_state)}", t0)
-        state = sorted(next_state, key=lambda x: x[0], reverse=True)[:beam_width]
+        state = sorted(next_state, key=lambda x: x[0], reverse=True)[:state_limit]
         if state and state[0][1] > best_score:
             best_score = state[0][1]
             best_board = state[0][2]
