@@ -2,6 +2,7 @@
 
 import time
 import threading
+import os
 from colorama import Fore, Style, init
 
 init()
@@ -51,3 +52,18 @@ def vlog(msg, t0=None):
             log_with_time(f"{msg} (took {elapsed:.3f}s)")
         else:
             log_with_time(msg)
+
+def log_puzzle_to_file(api_response):
+    """Log the day's puzzle (board and rack) to a dated file in the `logs` directory."""
+    # Ensure logs directory exists
+    logs_dir = os.path.join(os.getcwd(), 'logs')
+    os.makedirs(logs_dir, exist_ok=True)
+
+    # Create a dated log file
+    log_file = os.path.join(logs_dir, f"puzzle_{time.strftime('%Y-%m-%d')}.log")
+
+    # Write the API response to the log file
+    with open(log_file, 'w') as f:
+        f.write(api_response)
+
+    log_with_time(f"Puzzle logged to {log_file}", color=Fore.GREEN)
