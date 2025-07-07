@@ -19,9 +19,9 @@ def print_board(board, bonus=None):
             for c, cell in enumerate(row):
                 underlying = bonus[r][c] if bonus else cell
                 if cell == 'DL':
-                    line.append(Fore.BLUE + 'DL' + Style.RESET_ALL)
+                    line.append(Fore.CYAN + 'DL' + Style.RESET_ALL)
                 elif cell == 'TL':
-                    line.append(Fore.CYAN + 'TL' + Style.RESET_ALL)
+                    line.append(Fore.BLUE + 'TL' + Style.RESET_ALL)
                 elif cell == 'DW':
                     line.append(Fore.MAGENTA + 'DW' + Style.RESET_ALL)
                 elif cell == 'TW':
@@ -29,9 +29,9 @@ def print_board(board, bonus=None):
                 elif len(cell) == 1:
                     color = Fore.GREEN
                     if underlying == 'DL':
-                        color = Fore.BLUE
-                    elif underlying == 'TL':
                         color = Fore.CYAN
+                    elif underlying == 'TL':
+                        color = Fore.BLUE
                     elif underlying == 'DW':
                         color = Fore.MAGENTA
                     elif underlying == 'TW':
