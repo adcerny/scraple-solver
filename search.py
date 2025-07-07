@@ -263,10 +263,29 @@ def beam_from_first(play, board, rack_count, words, wordset, original_bonus, bea
     if not can_play:
         return (float('-inf'), None, None)
     place_word(board_copy, play_word, play[3], play[4], play[2])
+    if play_word == "HEAVY" and ((play[3], play[4], play[2]) == (0,3,'V') or (play[3], play[4], play[2]) == (0,2,'V')):
+        from board import print_board
+        from score_cache import cached_board_score, board_to_tuple
+        pos = f"({play[3]},{play[4]}) {play[2]}"
+        print(f"[DEBUG] Board after playing HEAVY at {pos}:")
+        print_board(board_copy, original_bonus)
+        sc = cached_board_score(board_to_tuple(board_copy), board_to_tuple(original_bonus))
+        print(f"[DEBUG] Score after first move: {sc}")
     placed_copy = {(r, c) for r in range(N) for c in range(N) if len(board_copy[r][c]) == 1}
     score, final_board, moves = full_beam_search(
         board_copy, rack_after_first, words_for_sim, wordset, placed_copy, original_bonus, beam_width=beam_width, max_moves=max_moves
     )
+    if play_word == "HEAVY" and ((play[3], play[4], play[2]) == (0,3,'V') or (play[3], play[4], play[2]) == (0,2,'V')):
+        from board import print_board
+        from score_cache import cached_board_score, board_to_tuple
+        pos = f"({play[3]},{play[4]}) {play[2]}"
+        print(f"[DEBUG] Final board for HEAVY at {pos}:")
+        if final_board:
+            print_board(final_board, original_bonus)
+            sc = cached_board_score(board_to_tuple(final_board), board_to_tuple(original_bonus))
+            print(f"[DEBUG] Final computed score: {sc}")
+        else:
+            print("[DEBUG] No final board returned")
     return (score, final_board, [(play[0], play_word, play[2], play[3], play[4])] + (moves if moves else []))
 
 def parallel_first_beam(
