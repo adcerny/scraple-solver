@@ -52,6 +52,8 @@ def run_solver():
     parser = argparse.ArgumentParser(description="ScrapleSolver")
     parser.add_argument('--beam-width', type=int, default=10, help='Beam width for the search (default: 10)')
     parser.add_argument('--first-moves', type=int, default=None, help='Number of opening moves to explore (default: beam width)')
+    parser.add_argument('--positions-per-word', type=int, default=1,
+                        help='Number of starting positions to evaluate for each word (default: 1)')
     parser.add_argument('--depth', type=int, default=20, help='Maximum number of moves to search (default: 20)')
     parser.add_argument('--verbose', action='store_true', help='Enable verbose logging')
     parser.add_argument('--no-cache', action='store_true', help='Disable board score caching')
@@ -73,9 +75,10 @@ def run_solver():
 
     beam_width = args.beam_width
     first_moves = args.first_moves
+    positions_per_word = args.positions_per_word
     max_moves = args.depth
     log_with_time(
-        f"Evaluating full {beam_width} beam width search with {first_moves or beam_width} first moves and max depth {max_moves}..."
+        f"Evaluating full {beam_width} beam width search with {first_moves or beam_width} first moves, {positions_per_word} positions/word and max depth {max_moves}..."
     )
 
     # Run the search and collect best results as they are found
@@ -88,6 +91,7 @@ def run_solver():
         beam_width=beam_width,
         first_moves=first_moves,
         max_moves=max_moves,
+        positions_per_word=positions_per_word,
     )
 
     if not best_results:

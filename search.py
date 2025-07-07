@@ -127,8 +127,22 @@ def validate_new_words(board, wordset, w, r0, c0, d):
                     return False
     return True
 
-def find_best(board, rack_count, words, wordset, touch=None, original_bonus=None, top_k=10):
-    """Return the best ``top_k`` placements across all words.
+def find_best(
+    board,
+    rack_count,
+    words,
+    wordset,
+    touch=None,
+    original_bonus=None,
+    top_k=10,
+    top_k_per_word=None,
+):
+    """Return the best placements across all words.
+
+    The search returns up to ``top_k`` overall placements sorted by score.  When
+    ``top_k_per_word`` is provided, at most that many placements for each word
+    will be considered when computing the final list.  This allows exploring
+    multiple starting positions for the same word.
 
     Previously this function returned only a single best placement which meant
     that once a word was chosen its other potentially promising placements were
@@ -142,36 +156,52 @@ def find_best(board, rack_count, words, wordset, touch=None, original_bonus=None
     candidates = []
     for w in words:
         L = len(w)
+        word_candidates = []
         for r in range(N):
             for c in range(N-L+1):
-                if not is_valid_placement(w, board, rack_count, wordset, r, c, 'H'): continue
+                if not is_valid_placement(w, board, rack_count, wordset, r, c, 'H'):
+                    continue
                 coords = [(r, c+i) for i in range(L)]
-                if touch and not any((nr,nc) in touch or any(abs(nr-tr)+abs(nc-tc)==1 for tr,tc in touch) for nr,nc in coords): continue
+                if touch and not any((nr,nc) in touch or any(abs(nr-tr)+abs(nc-tc)==1 for tr,tc in touch) for nr,nc in coords):
+                    continue
                 board_copy = [row[:] for row in board]
                 rack_copy = rack_count.copy()
                 can_play, _ = can_play_word_on_board(w, r, c, 'H', board_copy, rack_copy)
-                if not can_play: continue
+                if not can_play:
+                    continue
                 place_word(board_copy, w, r, c, 'H')
-                if not validate_new_words(board_copy, wordset, w, r, c, 'H'): continue
+                if not validate_new_words(board_copy, wordset, w, r, c, 'H'):
+                    continue
                 move_score = cached_board_score(board_to_tuple(board_copy), board_to_tuple(original_bonus))
                 bonus_count = sum(1 for i in range(L) if board[r][c+i] in {'DL','TL','DW','TW'})
-                candidates.append((move_score, bonus_count, L, w, 'H', r, c))
+                word_candidates.append((move_score, bonus_count, L, w, 'H', r, c))
                 checked += 1
         for r in range(N-L+1):
             for c in range(N):
-                if not is_valid_placement(w, board, rack_count, wordset, r, c, 'V'): continue
+                if not is_valid_placement(w, board, rack_count, wordset, r, c, 'V'):
+                    continue
                 coords = [(r+i, c) for i in range(L)]
-                if touch and not any((nr,nc) in touch or any(abs(nr-tr)+abs(nc-tc)==1 for tr,tc in touch) for nr,nc in coords): continue
+                if touch and not any((nr,nc) in touch or any(abs(nr-tr)+abs(nc-tc)==1 for tr,tc in touch) for nr,nc in coords):
+                    continue
                 board_copy = [row[:] for row in board]
                 rack_copy = rack_count.copy()
                 can_play, _ = can_play_word_on_board(w, r, c, 'V', board_copy, rack_copy)
-                if not can_play: continue
+                if not can_play:
+                    continue
                 place_word(board_copy, w, r, c, 'V')
-                if not validate_new_words(board_copy, wordset, w, r, c, 'V'): continue
+                if not validate_new_words(board_copy, wordset, w, r, c, 'V'):
+                    continue
                 move_score = cached_board_score(board_to_tuple(board_copy), board_to_tuple(original_bonus))
                 bonus_count = sum(1 for i in range(L) if board[r+i][c] in {'DL','TL','DW','TW'})
-                candidates.append((move_score, bonus_count, L, w, 'V', r, c))
+                word_candidates.append((move_score, bonus_count, L, w, 'V', r, c))
                 checked += 1
+
+        # Sort candidate placements for this word
+        word_candidates.sort(reverse=True)
+        if top_k_per_word is not None:
+            word_candidates = word_candidates[:top_k_per_word]
+        candidates.extend(word_candidates)
+
     # Sort by move_score, then bonus_count, then word length (descending)
     candidates.sort(reverse=True)
     vlog(
@@ -257,7 +287,17 @@ def beam_from_first(play, board, rack_count, words, wordset, original_bonus, bea
     )
     return (score, final_board, [(play[0], play_word, play[2], play[3], play[4])] + (moves if moves else []))
 
-def parallel_first_beam(board, rack, words, wordset, original_bonus, beam_width=5, first_moves=None, max_moves=20):
+def parallel_first_beam(
+    board,
+    rack,
+    words,
+    wordset,
+    original_bonus,
+    beam_width=5,
+    first_moves=None,
+    max_moves=20,
+    positions_per_word=1,
+):
     """Search game states starting from multiple first moves in parallel.
 
     Parameters
@@ -276,6 +316,9 @@ def parallel_first_beam(board, rack, words, wordset, original_bonus, beam_width=
         Number of states kept at each depth during beam search.
     first_moves : int, optional
         Number of candidate opening moves to explore (default ``beam_width``).
+    positions_per_word : int, optional
+        How many placements to evaluate for each unique starting word
+        when generating the list of opening moves.
     max_moves : int, optional
         Maximum depth of the search.
     """
@@ -297,6 +340,7 @@ def parallel_first_beam(board, rack, words, wordset, original_bonus, beam_width=
         None,
         original_bonus,
         top_k=first_moves,
+        top_k_per_word=positions_per_word,
     )
     vlog("find_best for first moves", t1)
 
