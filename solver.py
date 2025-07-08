@@ -78,6 +78,8 @@ def run_solver():
     parser.add_argument('--verbose', action='store_true', help='Enable verbose logging')
     parser.add_argument('--no-cache', action='store_true', help='Disable board score caching')
     parser.add_argument('--log-puzzle', action='store_true', help='Save the day\'s puzzle and best result to a JSON log file')
+    parser.add_argument('--no-of-games', type=int, default=50, help='Number of first moves (games) to try (default: 50)')
+    parser.add_argument('--initial-positions', type=int, default=1, help='Maximum number of positions of the first word to play')
     args = parser.parse_args()
 
     utils.start_time = time.time()
@@ -118,11 +120,13 @@ def run_solver():
     beam_width = args.beam_width
     first_moves = args.first_moves
     max_moves = args.depth
+    no_of_games = args.no_of_games
+    initial_positions = args.initial_positions
     log_with_time(
         f"Evaluating full {beam_width} beam width search with {first_moves or beam_width} first moves and max depth {max_moves}..."
     )
 
-    # Run the search and collect best results as they are found
+    # Only call parallel_first_beam once, with first_moves=no_of_games
     best_total, best_results = parallel_first_beam(
         board,
         rack,
@@ -130,7 +134,7 @@ def run_solver():
         wordset,
         original_bonus,
         beam_width=beam_width,
-        first_moves=first_moves,
+        first_moves=no_of_games,
         max_moves=max_moves,
     )
 
