@@ -130,11 +130,12 @@ def validate_new_words(board, wordset, w, r0, c0, d):
 def find_best(board, rack_count, words, wordset, touch=None, original_bonus=None, top_k=10):
     """Return the best ``top_k`` placements across all words.
 
-    Previously this function returned only a single best placement which meant
-    that once a word was chosen its other potentially promising placements were
-    discarded.  To explore a richer search space we now return a list of the
-    ``top_k`` scoring candidates.  Each entry is a tuple of
-    ``(score, word, direction, row, col)`` ordered by descending score.
+    If ``top_k`` is ``None`` all valid moves will be returned.  Previously this
+    function returned only a single best placement which meant that once a word
+    was chosen its other potentially promising placements were discarded.  To
+    explore a richer search space we now return a list of the ``top_k`` scoring
+    candidates.  Each entry is a tuple of ``(score, word, direction, row, col)``
+    ordered by descending score.
     """
 
     t0 = time.time()
@@ -175,19 +176,26 @@ def find_best(board, rack_count, words, wordset, touch=None, original_bonus=None
     # Sort by move_score, then bonus_count, then word length (descending)
     candidates.sort(reverse=True)
     vlog(
-        f"find_best checked {checked} placements for {len(words)} words, returning top {top_k}",
+        f"find_best checked {checked} placements for {len(words)} words, returning top {top_k if top_k is not None else 'all'}",
         t0,
     )
 
     if not candidates:
         return []
 
+    selected = candidates if top_k is None else candidates[:top_k]
     top_moves = [
-        (sc, w, d, r, c) for sc, _, _, w, d, r, c in candidates[:top_k]
+        (sc, w, d, r, c) for sc, _, _, w, d, r, c in selected
     ]
     return top_moves
 
 def full_beam_search(board, rack_count, words, wordset, placed, original_bonus, beam_width=5, max_moves=20):
+    """Perform a beam search over a Scrabble board.
+
+    If ``beam_width`` is ``None`` the search keeps all states at each depth,
+    effectively exploring the full search tree up to ``max_moves``.
+    """
+
     state = [(0, board, rack_count, set(placed), [], words)]
     best_score = 0
     best_board = None
@@ -233,8 +241,13 @@ def full_beam_search(board, rack_count, words, wordset, placed, original_bonus, 
                         next_words,
                     )
                 )
-        vlog(f"full_beam_search move {move_num}: {len(state)} states expanded to {len(next_state)}", t0)
-        state = sorted(next_state, key=lambda x: x[0], reverse=True)[:beam_width]
+        vlog(
+            f"full_beam_search move {move_num}: {len(state)} states expanded to {len(next_state)}",
+            t0,
+        )
+        state = sorted(next_state, key=lambda x: x[0], reverse=True)
+        if beam_width is not None:
+            state = state[:beam_width]
         if state and state[0][0] > best_score:
             best_score = state[0][0]
             best_board = state[0][1]
@@ -243,6 +256,11 @@ def full_beam_search(board, rack_count, words, wordset, placed, original_bonus, 
     return best_score, best_board, best_moves
 
 def beam_from_first(play, board, rack_count, words, wordset, original_bonus, beam_width, max_moves=20):
+    """Run a beam search after making an initial play.
+
+    Parameters are the same as :func:`full_beam_search`. ``beam_width`` may be
+    ``None`` to explore all moves after the starting word.
+    """
     play_word = play[1]
     words_for_sim = [w for w in words if w != play_word]
     board_copy = [row[:] for row in board]

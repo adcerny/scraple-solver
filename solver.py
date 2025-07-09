@@ -6,6 +6,7 @@ import requests
 from collections import Counter
 import utils
 from utils import N, MAPPING, log_with_time, vlog, LETTER_SCORES
+import os
 from colorama import Fore
 from board import print_board, compute_board_score
 import time  # Ensure time is available in imported modules
@@ -77,6 +78,8 @@ def run_solver():
     parser.add_argument('--verbose', action='store_true', help='Enable verbose logging')
     parser.add_argument('--no-cache', action='store_true', help='Disable board score caching')
     parser.add_argument('--log-puzzle', action='store_true', help='Save the day\'s puzzle and best result to a JSON log file')
+    parser.add_argument('--high-score-deep-dive', nargs='?', const=1000, type=int,
+                        help='After initial search, explore all subsequent moves for the best starting word. Optionally specify beam width (default: 1000)')
     args = parser.parse_args()
 
     utils.start_time = time.time()
@@ -154,6 +157,47 @@ def run_solver():
         print_board(best_board, original_bonus)
         print(f"Final board score: {cached_board_score(board_to_tuple(best_board), board_to_tuple(original_bonus))}")
         print("-" * 40)
+
+    if args.high_score_deep_dive and best_results:
+        deep_dive_beam_width = args.high_score_deep_dive if isinstance(args.high_score_deep_dive, int) else 1000
+        # Find the highest scoring first move among all best_results
+        best_first_move = None
+        best_first_score = float('-inf')
+        for score, board_candidate, moves in best_results:
+            if moves and moves[0][0] > best_first_score:
+                best_first_score = moves[0][0]
+                best_first_move = moves[0]
+
+        if best_first_move:
+            log_with_time(
+                f"High score deep dive starting from {best_first_move[1]} at ({best_first_move[3]},{best_first_move[4]}) {best_first_move[2]}",
+                color=Fore.YELLOW,
+            )
+            rack_count = Counter(rack)
+            dive_score, dive_board, dive_moves = search.beam_from_first(
+                best_first_move,
+                board,
+                rack_count,
+                words,
+                wordset,
+                original_bonus,
+                beam_width=deep_dive_beam_width,
+                max_moves=max_moves,
+            )
+            if dive_board:
+                log_with_time(
+                    f"Deep dive best score: {dive_score}",
+                    color=Fore.YELLOW,
+                )
+                log_with_time("Move sequence:", color=Fore.YELLOW)
+                for move in dive_moves:
+                    sc, w, d, r0, c0 = move
+                    log_with_time(
+                        f"  {w} at ({r0},{c0}) {d} scoring {sc}",
+                        color=Fore.YELLOW,
+                    )
+                log_with_time("Final board:", color=Fore.YELLOW)
+                print_board(dive_board, original_bonus)
 
     # Log the puzzle and best result if requested
     if args.log_puzzle and best_results:
