@@ -20,9 +20,7 @@ def cached_board_score(board_tuple, bonus_tuple):
     global _actual_hits, _actual_misses
     if CACHE_DISABLED:
         # Always recompute, do not use or update cache or hit/miss counts
-        board = [list(row) for row in board_tuple]
-        bonus = [list(row) for row in bonus_tuple]
-        return compute_board_score(board, bonus)
+        return compute_board_score(board_tuple, bonus_tuple)
     if utils.VERBOSE:
         h = board_hash(board_tuple, bonus_tuple)
         count = _seen_hashes.get(h, 0)
@@ -36,9 +34,7 @@ def cached_board_score(board_tuple, bonus_tuple):
         return cache[key]
     else:
         _actual_misses += 1
-        board = [list(row) for row in board_tuple]
-        bonus = [list(row) for row in bonus_tuple]
-        val = compute_board_score(board, bonus)
+        val = compute_board_score(board_tuple, bonus_tuple)
         cache[key] = val
         return val
 
