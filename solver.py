@@ -80,7 +80,13 @@ def run_solver():
     parser.add_argument('--log-puzzle', action='store_true', help='Save the day\'s puzzle and best result to a JSON log file')
     parser.add_argument('--high-score-deep-dive', nargs='?', const=1000, type=int,
                         help='After initial search, explore all subsequent moves for the best starting word. Optionally specify beam width (default: 1000)')
+    parser.add_argument('--load-log', type=str, default=None, help='Path to a JSON log file to load the puzzle from instead of calling the API')
+    parser.add_argument('--start-word', type=str, default=None, help='Specify a start word to force as the first move')
     args = parser.parse_args()
+
+    beam_width = args.beam_width
+    first_moves = args.first_moves
+    max_moves = args.depth
 
     utils.start_time = time.time()
     utils.VERBOSE = args.verbose
@@ -89,12 +95,29 @@ def run_solver():
     import score_cache
     score_cache.CACHE_DISABLED = args.no_cache
 
-    # Fetch the board and rack
-    board, rack = fetch_board_and_rack()
+    if args.load_log:
+        try:
+            with open(args.load_log, 'r') as f:
+                log_data = json.load(f)
+        except FileNotFoundError:
+            log_with_time(f"Could not find log file: {args.load_log}", color=Fore.RED)
+            return
+        except Exception as e:
+            log_with_time(f"Error loading log file: {e}", color=Fore.RED)
+            return
+        puzzle = log_data['puzzle']
+        board = [['' for _ in range(N)] for _ in range(N)]
+        for bonus, pos in puzzle['bonusTilePositions'].items():
+            if isinstance(pos[0], int):
+                r, c = pos
+                board[r][c] = MAPPING[bonus]
+        rack = [t['letter'].upper() for t in puzzle['letters']]
+    else:
+        # Fetch the board and rack
+        board, rack = fetch_board_and_rack()
 
     # Log the puzzle if the argument is provided
     if args.log_puzzle:
-        import json
         api_response = json.dumps({
             "letters": [{"letter": t.upper(), "points": LETTER_SCORES[t.upper()]} for t in rack],
             "bonusTilePositions": {bonus: pos for bonus, pos in MAPPING.items()},
@@ -109,20 +132,62 @@ def run_solver():
     original_bonus = [row[:] for row in board]
     words, wordset = load_dictionary()
 
-    # Save the API response for logging
-    api_response = None
-    if args.log_puzzle:
-        # Fetch the raw API response for logging
-        resp = requests.get(API_URL)
-        resp.raise_for_status()
-        api_response = resp.text
+    # If --start-word is provided, check if it can be formed from the rack and use it as the first move
+    if args.start_word:
+        start_word = args.start_word.upper()
+        log_with_time(f"Using start word: '{start_word}'", color=Fore.YELLOW)
+        rack_counter = Counter(rack)
+        word_counter = Counter(start_word)
+        if any(word_counter[ch] > rack_counter.get(ch, 0) for ch in word_counter):
+            log_with_time(f"Cannot form start word '{start_word}' from rack: {' '.join(rack)}", color=Fore.RED)
+            return
+        from search import find_best, beam_from_first, prune_words
+        # Find all valid placements for the start word
+        valid_placements = find_best(
+            board,
+            rack_counter,
+            [start_word],
+            wordset,
+            None,
+            original_bonus,
+            top_k=None
+        )
+        if not valid_placements:
+            log_with_time(f"No valid placements for start word '{start_word}' on the board.", color=Fore.RED)
+            return
+        best_placement = max(valid_placements, key=lambda x: x[0])
+        log_with_time(f"Best placement for '{start_word}': score {best_placement[0]}, position ({best_placement[3]},{best_placement[4]}) {best_placement[2]}", color=Fore.YELLOW)
+        # Remove start word letters from rack for pruning
+        rack_after_first = rack_counter.copy()
+        for ch in start_word:
+            rack_after_first[ch] -= 1
+            if rack_after_first[ch] == 0:
+                del rack_after_first[ch]
+        pruned_words = prune_words(words, rack_after_first, board)
+        log_with_time(f"Pruned word list for subsequent moves: {len(pruned_words)} words")
+        score, board_after, moves = beam_from_first(
+            best_placement,
+            board,
+            rack_counter,
+            pruned_words,
+            wordset,
+            original_bonus,
+            beam_width=beam_width,
+            max_moves=max_moves
+        )
+        log_with_time(f"Best result with start word '{start_word}': {score}", color=Fore.GREEN)
+        log_with_time("Move sequence:", color=Fore.GREEN)
+        for move in moves:
+            sc, w, d, r0, c0 = move
+            log_with_time(f"  {w} at ({r0},{c0}) {d} scoring {sc}", color=Fore.GREEN)
+        log_with_time("Final simulated board:", color=Fore.GREEN)
+        print()
+        print_board(board_after, original_bonus)
+        print(f"Final board score: {cached_board_score(board_to_tuple(board_after), board_to_tuple(original_bonus))}")
+        print("-" * 40)
+        return
 
-    beam_width = args.beam_width
-    first_moves = args.first_moves
-    max_moves = args.depth
-    log_with_time(
-        f"Evaluating full {beam_width} beam width search with {first_moves or beam_width} first moves and max depth {max_moves}..."
-    )
+    # Normal game logic (all words) only runs if --start-word is not provided
 
     # Run the search and collect best results as they are found
     best_total, best_results = parallel_first_beam(
