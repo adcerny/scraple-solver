@@ -25,59 +25,73 @@ def get_perpendicular_coords(temp, r, c, direction):
     if direction == 'H':
         i = r - 1
         while i >= 0 and len(temp[i][c]) == 1:
-            coords.insert(0, (i, c)); i -= 1
+            coords.insert(0, (i, c))
+            i -= 1
         i = r + 1
         while i < N and len(temp[i][c]) == 1:
-            coords.append((i, c)); i += 1
+            coords.append((i, c))
+            i += 1
     else:
         j = c - 1
         while j >= 0 and len(temp[r][j]) == 1:
-            coords.insert(0, (r, j)); j -= 1
+            coords.insert(0, (r, j))
+            j -= 1
         j = c + 1
         while j < N and len(temp[r][j]) == 1:
-            coords.append((r, j)); j += 1
+            coords.append((r, j))
+            j += 1
     return coords if len(coords) > 1 else []
 
 def is_valid_placement(w, board, rack_count, wordset, r0, c0, d):
-    # Early exit: check bounds and board letter mismatches, collect needed tiles
-    needed = {}
+    """Check if ``w`` can be legally placed on ``board`` starting at ``r0,c0``."""
+
+    placed = []               # positions of newly placed tiles
+    needed = {}               # tile counts required from rack
+
     for i, ch in enumerate(w):
         r = r0 + (i if d == 'V' else 0)
         c = c0 + (i if d == 'H' else 0)
-        if not (0 <= r < N and 0 <= c < N):
+        if r < 0 or r >= N or c < 0 or c >= N:
             return False
         cell = board[r][c]
         if len(cell) == 1:
             if cell != ch:
                 return False
         else:
-            needed[ch] = needed.get(ch, 0) + 1
-    # Early exit: rack sufficiency
-    for ch, count in needed.items():
-        if rack_count[ch] < count:
-            return False
-    # Must place at least one tile
-    if not needed:
+            cnt = needed.get(ch, 0) + 1
+            if rack_count[ch] < cnt:
+                return False
+            needed[ch] = cnt
+            placed.append((r, c, ch))
+
+    if not placed:  # must place at least one tile
         return False
-    # Place only new tiles (no full board copy)
-    placed = set()
-    for i, ch in enumerate(w):
-        r = r0 + (i if d == 'V' else 0)
-        c = c0 + (i if d == 'H' else 0)
-        if len(board[r][c]) != 1:
-            placed.add((r, c, ch))
-    # Check perpendicular words for each new tile
+
+    # Validate perpendicular words created by the new tiles
     for r, c, ch in placed:
-        # Place the tile temporarily
         orig = board[r][c]
         board[r][c] = ch
-        coords = get_perpendicular_coords(board, r, c, d)
-        if coords:
-            word = ''.join(board[rr][cc] for rr, cc in coords)
-            if word not in wordset:
-                board[r][c] = orig
-                return False
+        if d == 'H':
+            i = r
+            while i > 0 and len(board[i-1][c]) == 1:
+                i -= 1
+            word_chars = []
+            while i < N and len(board[i][c]) == 1:
+                word_chars.append(board[i][c])
+                i += 1
+        else:
+            j = c
+            while j > 0 and len(board[r][j-1]) == 1:
+                j -= 1
+            word_chars = []
+            while j < N and len(board[r][j]) == 1:
+                word_chars.append(board[r][j])
+                j += 1
+        if len(word_chars) > 1 and ''.join(word_chars) not in wordset:
+            board[r][c] = orig
+            return False
         board[r][c] = orig
+
     return True
 
 def prune_words(words, rack_count, board):
