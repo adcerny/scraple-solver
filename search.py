@@ -39,12 +39,15 @@ def get_perpendicular_coords(temp, r, c, direction):
     return coords if len(coords) > 1 else []
 
 def is_valid_placement(w, board, rack_count, wordset, r0, c0, d):
-    # Early exit: check bounds and board letter mismatches, collect needed tiles
+    """Fast validity check for placing ``w`` on ``board``."""
     needed = {}
+    placed = []
+
+    # Check bounds and gather tiles that need to come from the rack
     for i, ch in enumerate(w):
         r = r0 + (i if d == 'V' else 0)
         c = c0 + (i if d == 'H' else 0)
-        if not (0 <= r < N and 0 <= c < N):
+        if r < 0 or r >= N or c < 0 or c >= N:
             return False
         cell = board[r][c]
         if len(cell) == 1:
@@ -52,32 +55,45 @@ def is_valid_placement(w, board, rack_count, wordset, r0, c0, d):
                 return False
         else:
             needed[ch] = needed.get(ch, 0) + 1
-    # Early exit: rack sufficiency
-    for ch, count in needed.items():
-        if rack_count[ch] < count:
-            return False
-    # Must place at least one tile
-    if not needed:
+            placed.append((r, c, cell))
+
+    if not placed:
         return False
-    # Place only new tiles (no full board copy)
-    placed = set()
-    for i, ch in enumerate(w):
-        r = r0 + (i if d == 'V' else 0)
-        c = c0 + (i if d == 'H' else 0)
-        if len(board[r][c]) != 1:
-            placed.add((r, c, ch))
-    # Check perpendicular words for each new tile
-    for r, c, ch in placed:
-        # Place the tile temporarily
-        orig = board[r][c]
-        board[r][c] = ch
-        coords = get_perpendicular_coords(board, r, c, d)
-        if coords:
-            word = ''.join(board[rr][cc] for rr, cc in coords)
-            if word not in wordset:
-                board[r][c] = orig
-                return False
+
+    for ch, cnt in needed.items():
+        if rack_count[ch] < cnt:
+            return False
+
+    # Validate perpendicular words created by newly placed tiles
+    horiz = d == 'H'
+    for r, c, orig in placed:
+        board[r][c] = w[c - c0 if horiz else r - r0]
+        if horiz:
+            r_start = r
+            while r_start > 0 and len(board[r_start - 1][c]) == 1:
+                r_start -= 1
+            r_end = r
+            while r_end + 1 < N and len(board[r_end + 1][c]) == 1:
+                r_end += 1
+            if r_end - r_start > 0:
+                word = ''.join(board[x][c] for x in range(r_start, r_end + 1))
+                if len(word) > 1 and word not in wordset:
+                    board[r][c] = orig
+                    return False
+        else:
+            c_start = c
+            while c_start > 0 and len(board[r][c_start - 1]) == 1:
+                c_start -= 1
+            c_end = c
+            while c_end + 1 < N and len(board[r][c_end + 1]) == 1:
+                c_end += 1
+            if c_end - c_start > 0:
+                word = ''.join(board[r][y] for y in range(c_start, c_end + 1))
+                if len(word) > 1 and word not in wordset:
+                    board[r][c] = orig
+                    return False
         board[r][c] = orig
+
     return True
 
 def prune_words(words, rack_count, board):
