@@ -82,11 +82,13 @@ def run_solver():
                         help='After initial search, explore all subsequent moves for the best starting word. Optionally specify beam width (default: 1000)')
     parser.add_argument('--load-log', type=str, default=None, help='Path to a JSON log file to load the puzzle from instead of calling the API')
     parser.add_argument('--start-word', type=str, default=None, help='Specify a start word to force as the first move')
+    parser.add_argument('--num-games', type=int, default=100, help='Number of games to play in parallel (default: 100)')
     args = parser.parse_args()
 
     beam_width = args.beam_width
     first_moves = args.first_moves
     max_moves = args.depth
+    num_games = args.num_games
 
     utils.start_time = time.time()
     utils.VERBOSE = args.verbose
@@ -197,6 +199,7 @@ def run_solver():
         wordset,
         original_bonus,
         beam_width=beam_width,
+        num_games=num_games,
         first_moves=first_moves,
         max_moves=max_moves,
     )
