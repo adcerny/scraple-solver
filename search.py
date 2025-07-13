@@ -306,7 +306,7 @@ def beam_from_first(play, board, rack_count, words, wordset, original_bonus, bea
     )
     return (score, final_board, [(play[0], play_word, play[2], play[3], play[4])] + (moves if moves else []))
 
-def parallel_first_beam(board, rack, words, wordset, original_bonus, beam_width=5, first_moves=None, max_moves=20):
+def parallel_first_beam(board, rack, words, wordset, original_bonus, beam_width=5, num_games=100, first_moves=None, max_moves=20):
     """Search game states starting from multiple first moves in parallel.
 
     Parameters
@@ -323,8 +323,10 @@ def parallel_first_beam(board, rack, words, wordset, original_bonus, beam_width=
         Board of bonus squares used for scoring.
     beam_width : int, optional
         Number of states kept at each depth during beam search.
+    num_games : int, optional
+        Number of games to play in parallel (default 100).
     first_moves : int, optional
-        Number of candidate opening moves to explore (default ``beam_width``).
+        Number of candidate opening moves to explore (default ``num_games``).
     max_moves : int, optional
         Maximum depth of the search.
     """
@@ -332,7 +334,7 @@ def parallel_first_beam(board, rack, words, wordset, original_bonus, beam_width=
     rack_count = Counter(rack)
     placed = set()
     if first_moves is None:
-        first_moves = beam_width
+        first_moves = num_games
     t0 = time.time()
     pruned_words = prune_words(words, rack_count, board)
     log_with_time(f"Pruned word list: {len(pruned_words)} words")
@@ -386,7 +388,7 @@ def parallel_first_beam(board, rack, words, wordset, original_bonus, beam_width=
             msg_color = Fore.GREEN if status_msg else Fore.LIGHTBLUE_EX
             duration_msg = f" (duration: {elapsed:.3f}s)" if VERBOSE else ""
             log_with_time(
-                f"Move {idx+1}/{len(first_choices)}: {word} at ({row},{col}) {direction} → final score: {score}{duration_msg}{status_msg}",
+                f"Game {idx+1}/{len(first_choices)}: {word} at ({row},{col}) {direction} → final score: {score}{duration_msg}{status_msg}",
                 color=msg_color,
             )
             if print_board_flag:
