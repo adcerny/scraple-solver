@@ -337,7 +337,7 @@ def parallel_first_beam(board, rack, words, wordset, original_bonus, beam_width=
         first_moves = num_games
     t0 = time.time()
     pruned_words = prune_words(words, rack_count, board)
-    log_with_time(f"Pruned word list: {len(pruned_words)} words")
+    log_with_time(f"Pruned word list: {len(pruned_words)} words", color=Fore.CYAN)
     vlog("Initial prune_words", t0)
     t1 = time.time()
     first_choices = find_best(

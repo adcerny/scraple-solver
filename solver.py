@@ -144,6 +144,9 @@ def run_solver():
             log_with_time(f"Cannot form start word '{start_word}' from rack: {' '.join(rack)}", color=Fore.RED)
             return
         from search import find_best, beam_from_first, prune_words
+        # Prune words before placing the start word
+        pruned_words = prune_words(words, rack_counter, board)
+        log_with_time(f"Pruned word list: {len(pruned_words)} words", color=Fore.CYAN)
         # Find all valid placements for the start word
         valid_placements = find_best(
             board,
@@ -165,8 +168,7 @@ def run_solver():
             rack_after_first[ch] -= 1
             if rack_after_first[ch] == 0:
                 del rack_after_first[ch]
-        pruned_words = prune_words(words, rack_after_first, board)
-        log_with_time(f"Pruned word list for subsequent moves: {len(pruned_words)} words")
+        # Do NOT prune words again after start word
         score, board_after, moves = beam_from_first(
             best_placement,
             board,
