@@ -44,10 +44,12 @@ def print_board(board, bonus=None):
         print(flush=True)
 
 def place_word(board, w, r0, c0, d):
+    N = len(board)
     for i, ch in enumerate(w):
         r = r0 + (i if d == 'V' else 0)
         c = c0 + (i if d == 'H' else 0)
-        board[r][c] = ch
+        if 0 <= r < N and 0 <= c < N:
+            board[r][c] = ch
 
 def compute_board_score(board, original_bonus):
     total = 0
