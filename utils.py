@@ -1,4 +1,3 @@
-# --- utils.py ---
 
 import time
 import threading

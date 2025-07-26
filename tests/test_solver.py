@@ -14,7 +14,6 @@ import search
 import utils
 from board import board_valid, compute_board_score
 
-# Helper to count words on a board
 def count_words(board):
     N = utils.N
     letter_mask = [[len(cell) == 1 for cell in row] for row in board]

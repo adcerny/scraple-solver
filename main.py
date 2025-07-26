@@ -1,4 +1,3 @@
-# --- main.py ---
 
 from solver import run_solver
 import multiprocessing
