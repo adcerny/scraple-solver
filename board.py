@@ -1,4 +1,3 @@
-# Helper: convert leaderboard API gameState to a board suitable for print_board
 def leaderboard_gamestate_to_board(game_state):
     """
     Convert a leaderboard API gameState dict to a 2D board (list of lists of str) for print_board.
@@ -30,7 +29,6 @@ def leaderboard_gamestate_to_board(game_state):
             if not board[r][c]:
                 board[r][c] = bonus_board[r][c] if bonus_board[r][c] else ''
     return board, bonus_board
-# --- board.py ---
 
 from colorama import Fore, Style
 from utils import N, LETTER_SCORES, log_with_time, vlog, PRINT_LOCK

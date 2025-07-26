@@ -1,4 +1,3 @@
-# --- search.py ---
 
 from collections import Counter
 import concurrent.futures

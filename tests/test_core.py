@@ -10,7 +10,6 @@ import utils
 import contextlib
 
 def pytest_configure():
-    # Patch PRINT_LOCK to a dummy context manager for all tests
     utils.PRINT_LOCK = contextlib.nullcontext()
 
 def test_get_letter_mask():

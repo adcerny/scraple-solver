@@ -2,7 +2,6 @@ from board import compute_board_score
 import hashlib
 import utils
 
-# Debug output disabled
 
 _seen_hashes = {}
 _actual_hits = 0

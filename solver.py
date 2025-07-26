@@ -1,41 +1,23 @@
-def print_leaderboard_rank(best_score):
-    """Fetch leaderboard and print where the best score would rank."""
-    try:
-        resp = requests.get("https://scraple.io/api/leaderboard", timeout=10)
-        resp.raise_for_status()
-        leaderboard = resp.json()
-        leaderboard_scores = [entry["score"] for entry in leaderboard.get("scores", [])]
-        if leaderboard_scores:
-            rank = 1 + sum(1 for s in leaderboard_scores if s > best_score)
-            high_score = max(leaderboard_scores)
-            highscore_entries = [entry for entry in leaderboard.get("scores", []) if entry["score"] == high_score]
-            if best_score < high_score:
-                print(Fore.LIGHTYELLOW_EX + f"\nYour best score ({best_score}) would rank: {rank} out of {len(leaderboard_scores)} on the current leaderboard.")
-                print(Fore.LIGHTYELLOW_EX + f"Your score is lower than the current leaderboard high score: {high_score}")
-                print(Fore.LIGHTYELLOW_EX + "\nHigh Score Board Layout:")
-                from board import leaderboard_gamestate_to_board, print_board
-                for entry in highscore_entries:
-                    game_state = entry.get("gameState")
-                    if game_state:
-                        try:
-                            board, bonus = leaderboard_gamestate_to_board(game_state)
-                            print_board(board, bonus)
-                        except Exception as e:
-                            print(Fore.LIGHTYELLOW_EX + f"    (Could not display board: {e})")
-                print(Fore.RESET, end="")
-            elif best_score == high_score:
-                print(Fore.CYAN + f"\nYour best score ({best_score}) matches the current leaderboard high score!")
-                print(Fore.CYAN + f"You are tied for the high score! Rank: {rank} out of {len(leaderboard_scores)}")
-                print(Fore.RESET, end="")
-            else: 
-                print(Fore.GREEN + f"\nCongratulations! Your best score ({best_score}) is the new high score!")
-                print(Fore.GREEN + f"You are now #1 on the leaderboard! Rank: {rank} out of {len(leaderboard_scores)}")
-                print(Fore.RESET, end="")
+
+def print_leaderboard_summary(best_score, leaderboard_data):
+    leaderboard_scores = [entry["score"] for entry in leaderboard_data.get("scores", [])]
+    if leaderboard_scores:
+        rank = 1 + sum(1 for s in leaderboard_scores if s > best_score)
+        high_score = max(leaderboard_scores)
+        if best_score < high_score:
+            print(Fore.LIGHTYELLOW_EX + f"\nYour best score ({best_score}) would rank: {rank} out of {len(leaderboard_scores)} on the current leaderboard.")
+            print(Fore.LIGHTYELLOW_EX + f"Your score is lower than the current leaderboard high score: {high_score}")
+            print(Fore.RESET, end="")
+        elif best_score == high_score:
+            print(Fore.CYAN + f"\nYour best score ({best_score}) matches the current leaderboard high score!")
+            print(Fore.CYAN + f"You are tied for the high score! Rank: {rank} out of {len(leaderboard_scores)}")
+            print(Fore.RESET, end="")
         else:
-            print("Could not parse leaderboard scores.")
-    except Exception as e:
-        print(f"Could not fetch or parse leaderboard: {e}")
-# --- solver.py ---
+            print(Fore.GREEN + f"\nCongratulations! Your best score ({best_score}) is the new high score!")
+            print(Fore.GREEN + f"You are now #1 on the leaderboard! Rank: {rank} out of {len(leaderboard_scores)}")
+            print(Fore.RESET, end="")
+    else:
+        print("Could not parse leaderboard scores.")
 
 import argparse
 import time
@@ -51,6 +33,7 @@ from functools import lru_cache
 from score_cache import board_to_tuple, cached_board_score
 import json
 from datetime import datetime
+import concurrent.futures
 
 # Ensure search module has access to time
 import search
@@ -62,6 +45,7 @@ from search import parallel_first_beam
 
 API_URL  = 'https://scraple.io/api/daily-puzzle'
 DICT_URL = 'https://scraple.io/dictionary.txt'
+LEADERBOARD_URL = 'https://scraple.io/api/leaderboard'
 
 def fetch_board_and_rack():
     resp = requests.get(API_URL)
@@ -77,7 +61,7 @@ def fetch_board_and_rack():
     rack_data = ','.join(rack)
     log_puzzle_to_file(board_data, rack_data)
 
-    return board, rack
+    return board, rack, data
 
 def log_puzzle_to_file(board_data, rack_data):
     """Logs the day's puzzle (board and rack) to a file."""
@@ -105,7 +89,7 @@ def load_dictionary():
     wordset = set(words)
     vlog(f"Dictionary loaded and filtered ({len(words)} words)", t0)
     log_with_time(f"✅ {len(words)} words")
-    return words, wordset
+    return words, wordset, resp.text
 
 def run_solver():
     parser = argparse.ArgumentParser(description="ScrapleSolver")
@@ -134,6 +118,7 @@ def run_solver():
     import score_cache
     score_cache.CACHE_DISABLED = args.no_cache
 
+
     if args.load_log:
         try:
             with open(args.load_log, 'r') as f:
@@ -151,9 +136,22 @@ def run_solver():
                 r, c = pos
                 board[r][c] = MAPPING[bonus]
         rack = [t['letter'].upper() for t in puzzle['letters']]
+        leaderboard_data = None
+        words, wordset = load_dictionary()[:2]
     else:
-        # Fetch the board and rack
-        board, rack = fetch_board_and_rack()
+        # Fetch the board, dictionary, and leaderboard in parallel
+        with concurrent.futures.ThreadPoolExecutor() as executor:
+            future_board = executor.submit(fetch_board_and_rack)
+            future_dict = executor.submit(load_dictionary)
+            future_leaderboard = executor.submit(lambda: requests.get(LEADERBOARD_URL, timeout=10))
+            board, rack, board_api_data = future_board.result()
+            words, wordset, dict_text = future_dict.result()
+            leaderboard_resp = future_leaderboard.result()
+            try:
+                leaderboard_resp.raise_for_status()
+                leaderboard_data = leaderboard_resp.json()
+            except Exception:
+                leaderboard_data = None
 
     # Log the puzzle if the argument is provided
     if args.log_puzzle:
@@ -169,7 +167,25 @@ def run_solver():
     print_board(board)
     print("Rack:", ' '.join(rack))
     original_bonus = [row[:] for row in board]
-    words, wordset = load_dictionary()
+
+    # Show leaderboard high score after today's board
+    if not args.load_log and leaderboard_data:
+        leaderboard_scores = [entry["score"] for entry in leaderboard_data.get("scores", [])]
+        if leaderboard_scores:
+            high_score = max(leaderboard_scores)
+            highscore_entries = [entry for entry in leaderboard_data.get("scores", []) if entry["score"] == high_score]
+            print(Fore.LIGHTYELLOW_EX + "\nCurrent High Score Board Layout:")
+            from board import leaderboard_gamestate_to_board, print_board as print_board_func
+            for entry in highscore_entries:
+                game_state = entry.get("gameState")
+                if game_state:
+                    try:
+                        board_hs, bonus_hs = leaderboard_gamestate_to_board(game_state)
+                        print_board_func(board_hs, bonus_hs)
+                    except Exception as e:
+                        print(Fore.LIGHTYELLOW_EX + f"    (Could not display board: {e})")
+            print(Fore.RESET, end="")
+    # words, wordset already loaded above
 
     # If --start-word is provided, check if it can be formed from the rack and use it as the first move
     if args.start_word:
@@ -226,7 +242,8 @@ def run_solver():
         print_board(board_after, original_bonus)
         print(f"Final board score: {cached_board_score(board_to_tuple(board_after), board_to_tuple(original_bonus))}")
         print("-" * 40)
-        print_leaderboard_rank(score)
+        if not args.load_log and leaderboard_data:
+            print_leaderboard_summary(score, leaderboard_data)
         return
 
     best_total, best_results = parallel_first_beam(
@@ -263,8 +280,11 @@ def run_solver():
         print(f"Final board score: {cached_board_score(board_to_tuple(best_board), board_to_tuple(original_bonus))}")
         print("-" * 40)
 
-    if best_results:
-        print_leaderboard_rank(best_results[0][0])
+
+    # At the end, print a summary of how the user's best score compares to the leaderboard high score (no board layout)
+    if not args.load_log and leaderboard_data and best_results:
+        best_score = best_results[0][0]
+        print_leaderboard_summary(best_score, leaderboard_data)
 
     if args.high_score_deep_dive and best_results:
         deep_dive_beam_width = args.high_score_deep_dive if isinstance(args.high_score_deep_dive, int) else 1000
