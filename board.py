@@ -1,3 +1,35 @@
+# Helper: convert leaderboard API gameState to a board suitable for print_board
+def leaderboard_gamestate_to_board(game_state):
+    """
+    Convert a leaderboard API gameState dict to a 2D board (list of lists of str) for print_board.
+    """
+    N_local = N  # Use imported N
+    board = [['' for _ in range(N_local)] for _ in range(N_local)]
+    bonus_board = [['' for _ in range(N_local)] for _ in range(N_local)]
+    # Place bonuses
+    bonus_map = {
+        'DOUBLE_LETTER': 'DL',
+        'TRIPLE_LETTER': 'TL',
+        'DOUBLE_WORD': 'DW',
+        'TRIPLE_WORD': 'TW',
+    }
+    for bonus, pos in game_state.get('bonusTilePositions', {}).items():
+        if isinstance(pos[0], int):
+            r, c = pos
+            bonus_code = bonus_map.get(bonus, '')
+            bonus_board[r][c] = bonus_code
+    # Place tiles
+    for key, tile in game_state.get('placedTiles', {}).items():
+        r, c = map(int, key.split('-'))
+        letter = tile.get('letter')
+        if letter:
+            board[r][c] = letter.upper()
+    # Fill empty cells with bonus codes for print_board coloring
+    for r in range(N_local):
+        for c in range(N_local):
+            if not board[r][c]:
+                board[r][c] = bonus_board[r][c] if bonus_board[r][c] else ''
+    return board, bonus_board
 # --- board.py ---
 
 from colorama import Fore, Style
@@ -17,7 +49,7 @@ def print_board(board, bonus=None):
         for r, row in enumerate(board):
             line = []
             for c, cell in enumerate(row):
-                underlying = bonus[r][c] if bonus else cell
+                bonus_code = bonus[r][c] if bonus else ''
                 if cell == 'DL':
                     line.append(Fore.CYAN + 'DL' + Style.RESET_ALL)
                 elif cell == 'TL':
@@ -26,16 +58,13 @@ def print_board(board, bonus=None):
                     line.append(Fore.MAGENTA + 'DW' + Style.RESET_ALL)
                 elif cell == 'TW':
                     line.append(Fore.RED + 'TW' + Style.RESET_ALL)
-                elif len(cell) == 1:
-                    color = Fore.GREEN
-                    if underlying == 'DL':
-                        color = Fore.CYAN
-                    elif underlying == 'TL':
-                        color = Fore.BLUE
-                    elif underlying == 'DW':
-                        color = Fore.MAGENTA
-                    elif underlying == 'TW':
-                        color = Fore.RED
+                elif cell and len(cell) == 1:
+                    color = {
+                        'DL': Fore.CYAN,
+                        'TL': Fore.BLUE,
+                        'DW': Fore.MAGENTA,
+                        'TW': Fore.RED
+                    }.get(bonus_code, Fore.GREEN)
                     line.append(color + f' {cell}' + Style.RESET_ALL)
                 else:
                     line.append(Style.DIM + '··' + Style.RESET_ALL)

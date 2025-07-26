@@ -1,3 +1,40 @@
+def print_leaderboard_rank(best_score):
+    """Fetch leaderboard and print where the best score would rank."""
+    try:
+        resp = requests.get("https://scraple.io/api/leaderboard", timeout=10)
+        resp.raise_for_status()
+        leaderboard = resp.json()
+        leaderboard_scores = [entry["score"] for entry in leaderboard.get("scores", [])]
+        if leaderboard_scores:
+            rank = 1 + sum(1 for s in leaderboard_scores if s > best_score)
+            high_score = max(leaderboard_scores)
+            highscore_entries = [entry for entry in leaderboard.get("scores", []) if entry["score"] == high_score]
+            if best_score < high_score:
+                print(Fore.LIGHTYELLOW_EX + f"\nYour best score ({best_score}) would rank: {rank} out of {len(leaderboard_scores)} on the current leaderboard.")
+                print(Fore.LIGHTYELLOW_EX + f"Your score is lower than the current leaderboard high score: {high_score}")
+                print(Fore.LIGHTYELLOW_EX + "\nHigh Score Board Layout:")
+                from board import leaderboard_gamestate_to_board, print_board
+                for entry in highscore_entries:
+                    game_state = entry.get("gameState")
+                    if game_state:
+                        try:
+                            board, bonus = leaderboard_gamestate_to_board(game_state)
+                            print_board(board, bonus)
+                        except Exception as e:
+                            print(Fore.LIGHTYELLOW_EX + f"    (Could not display board: {e})")
+                print(Fore.RESET, end="")
+            elif best_score == high_score:
+                print(Fore.CYAN + f"\nYour best score ({best_score}) matches the current leaderboard high score!")
+                print(Fore.CYAN + f"You are tied for the high score! Rank: {rank} out of {len(leaderboard_scores)}")
+                print(Fore.RESET, end="")
+            else: 
+                print(Fore.GREEN + f"\nCongratulations! Your best score ({best_score}) is the new high score!")
+                print(Fore.GREEN + f"You are now #1 on the leaderboard! Rank: {rank} out of {len(leaderboard_scores)}")
+                print(Fore.RESET, end="")
+        else:
+            print("Could not parse leaderboard scores.")
+    except Exception as e:
+        print(f"Could not fetch or parse leaderboard: {e}")
 # --- solver.py ---
 
 import argparse
@@ -189,11 +226,9 @@ def run_solver():
         print_board(board_after, original_bonus)
         print(f"Final board score: {cached_board_score(board_to_tuple(board_after), board_to_tuple(original_bonus))}")
         print("-" * 40)
+        print_leaderboard_rank(score)
         return
 
-    # Normal game logic (all words) only runs if --start-word is not provided
-
-    # Run the search and collect best results as they are found
     best_total, best_results = parallel_first_beam(
         board,
         rack,
@@ -228,9 +263,11 @@ def run_solver():
         print(f"Final board score: {cached_board_score(board_to_tuple(best_board), board_to_tuple(original_bonus))}")
         print("-" * 40)
 
+    if best_results:
+        print_leaderboard_rank(best_results[0][0])
+
     if args.high_score_deep_dive and best_results:
         deep_dive_beam_width = args.high_score_deep_dive if isinstance(args.high_score_deep_dive, int) else 1000
-        # Find the highest scoring first move among all best_results
         best_first_move = None
         best_first_score = float('-inf')
         for score, board_candidate, moves in best_results:
