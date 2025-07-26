@@ -82,7 +82,7 @@ def run_solver():
                         help='After initial search, explore all subsequent moves for the best starting word. Optionally specify beam width (default: 1000)')
     parser.add_argument('--load-log', type=str, default=None, help='Path to a JSON log file to load the puzzle from instead of calling the API')
     parser.add_argument('--start-word', type=str, default=None, help='Specify a start word to force as the first move')
-    parser.add_argument('--num-games', type=int, default=100, help='Number of games to play in parallel (default: 100)')
+    parser.add_argument('--num-games', type=int, default=50, help='Number of games to play in parallel (default: 50)')
     args = parser.parse_args()
 
     beam_width = args.beam_width
