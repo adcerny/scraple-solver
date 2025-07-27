@@ -1,3 +1,37 @@
+def test_board_valid_fails_on_disconnected_words():
+    # This board has 'UT' at (0,0) V and 'MOMMY' at (3,0) H, not connected
+    board = [
+        ['U', '', '', 'O', 'W'],
+        ['T', '', 'V', 'I', 'A'],
+        ['', 'S', 'I', '', 'N'],
+        ['M', 'O', 'M', 'M', 'Y'],
+        ['I', '', 'S', 'I', '']
+    ]
+    wordset = {'UT', 'MOMMY', 'O', 'W', 'V', 'I', 'A', 'S', 'N'}
+    # This should be invalid, but current board_valid will return True (so this test will fail)
+    assert not board_valid(board, wordset)
+def test_board_invalid_disconnected_words():
+    # Board with two disconnected words: 'UT' at (0,0) V and 'MOMMY' at (3,0) H
+    board = [
+        ['U', '', '', 'O', 'W'],
+        ['T', '', 'V', 'I', 'A'],
+        ['', 'S', 'I', '', 'N'],
+        ['M', 'O', 'M', 'M', 'Y'],
+        ['I', '', 'S', 'I', '']
+    ]
+    wordset = {'UT', 'MOMMY', 'O', 'W', 'V', 'I', 'A', 'S', 'N'}
+    assert not board_valid(board, wordset)
+
+    # Board with only one word should pass
+    board2 = [
+        ['C', 'A', 'T', '', ''],
+        ['', '', '', '', ''],
+        ['', '', '', '', ''],
+        ['', '', '', '', ''],
+        ['', '', '', '', '']
+    ]
+    wordset2 = {'CAT'}
+    assert board_valid(board2, wordset2)
 import io
 import time
 import re

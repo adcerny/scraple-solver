@@ -232,6 +232,7 @@ def full_beam_search(board, rack_count, words, wordset, placed, original_bonus, 
     best_moves = None
     move_num = 1
 
+    from board import board_valid
     while state and move_num <= max_moves:
         t0 = time.time()
         next_state = []
@@ -248,6 +249,9 @@ def full_beam_search(board, rack_count, words, wordset, placed, original_bonus, 
                 b2 = [row[:] for row in b]
                 place_word(b2, w, r0, c0, d)
                 if not validate_new_words(b2, wordset, w, r0, c0, d):
+                    continue
+                # Only keep boards that are valid (including connectivity)
+                if not board_valid(b2, wordset):
                     continue
                 pl2 = {
                     (r, c)

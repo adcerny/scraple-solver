@@ -122,7 +122,7 @@ def score_word(letters, bonuses):
 
 def board_valid(board, wordset):
     letter_mask = get_letter_mask(board)
-    # Horizontal
+    # Check all words are valid
     for r in range(N):
         c = 0
         while c < N:
@@ -136,7 +136,6 @@ def board_valid(board, wordset):
                         return False
             else:
                 c += 1
-    # Vertical
     for c in range(N):
         r = 0
         while r < N:
@@ -150,4 +149,25 @@ def board_valid(board, wordset):
                         return False
             else:
                 r += 1
+
+    # Connectivity check: all placed tiles must be connected
+    # Find all tile positions
+    tile_positions = [(r, c) for r in range(N) for c in range(N) if letter_mask[r][c]]
+    if not tile_positions:
+        return True  # Empty board is valid
+    # BFS from the first tile
+    from collections import deque
+    visited = set()
+    queue = deque([tile_positions[0]])
+    while queue:
+        r, c = queue.popleft()
+        if (r, c) in visited:
+            continue
+        visited.add((r, c))
+        for dr, dc in [(-1,0),(1,0),(0,-1),(0,1)]:
+            nr, nc = r+dr, c+dc
+            if 0 <= nr < N and 0 <= nc < N and letter_mask[nr][nc] and (nr, nc) not in visited:
+                queue.append((nr, nc))
+    if len(visited) != len(tile_positions):
+        return False
     return True
