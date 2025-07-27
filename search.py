@@ -232,7 +232,19 @@ def full_beam_search(board, rack_count, words, wordset, placed, original_bonus, 
     best_moves = None
     move_num = 1
 
-    from board import board_valid
+    def is_adjacent_to_existing(b, r0, c0, d, L):
+        # Returns True if any placed tile is adjacent to an existing tile (not counting the new word itself)
+        for i in range(L):
+            r = r0 + (i if d == 'V' else 0)
+            c = c0 + (i if d == 'H' else 0)
+            for dr, dc in [(-1,0),(1,0),(0,-1),(0,1)]:
+                nr, nc = r+dr, c+dc
+                if 0 <= nr < N and 0 <= nc < N and len(b[nr][nc]) == 1:
+                    # Make sure it's not part of the new word itself
+                    if not ((d == 'H' and nr == r0 and c0 <= nc < c0+L) or (d == 'V' and nc == c0 and r0 <= nr < r0+L)):
+                        return True
+        return False
+
     while state and move_num <= max_moves:
         t0 = time.time()
         next_state = []
@@ -250,6 +262,10 @@ def full_beam_search(board, rack_count, words, wordset, placed, original_bonus, 
                 place_word(b2, w, r0, c0, d)
                 if not validate_new_words(b2, wordset, w, r0, c0, d):
                     continue
+                # Quick adjacency pre-filter: skip if not adjacent to existing tiles (except for first move)
+                if any(len(cell) == 1 for row in b for cell in row):
+                    if not is_adjacent_to_existing(b, r0, c0, d, len(w)):
+                        continue
                 # Only keep boards that are valid (including connectivity)
                 if not board_valid(b2, wordset):
                     continue

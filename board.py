@@ -121,6 +121,11 @@ def score_word(letters, bonuses):
     return score * word_multiplier
 
 def board_valid(board, wordset):
+    """
+    Return True if every formed word is in `wordset` and all tiles form a single connected group.
+    """
+    if not any(any(cell for cell in row) for row in board):
+        return True
     letter_mask = get_letter_mask(board)
     # Check all words are valid
     for r in range(N):
@@ -151,11 +156,16 @@ def board_valid(board, wordset):
                 r += 1
 
     # Connectivity check: all placed tiles must be connected
-    # Find all tile positions
+    if not _is_connected(letter_mask):
+        return False
+    return True
+
+# Helper: check if all True cells in letter_mask are connected
+def _is_connected(letter_mask):
+    N = len(letter_mask)
     tile_positions = [(r, c) for r in range(N) for c in range(N) if letter_mask[r][c]]
     if not tile_positions:
         return True  # Empty board is valid
-    # BFS from the first tile
     from collections import deque
     visited = set()
     queue = deque([tile_positions[0]])
@@ -168,6 +178,4 @@ def board_valid(board, wordset):
             nr, nc = r+dr, c+dc
             if 0 <= nr < N and 0 <= nc < N and letter_mask[nr][nc] and (nr, nc) not in visited:
                 queue.append((nr, nc))
-    if len(visited) != len(tile_positions):
-        return False
-    return True
+    return len(visited) == len(tile_positions)

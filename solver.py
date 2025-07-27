@@ -4,8 +4,8 @@ def print_leaderboard_summary(best_score, leaderboard_data):
     if leaderboard_scores:
         rank = 1 + sum(1 for s in leaderboard_scores if s > best_score)
         high_score = max(leaderboard_scores)
+        diff = abs(best_score - high_score)
         if best_score < high_score:
-            diff = high_score - best_score
             print(Fore.LIGHTYELLOW_EX + f"\nYour best score ({best_score}) would rank: {rank} out of {len(leaderboard_scores)} on the current leaderboard.")
             print(Fore.LIGHTYELLOW_EX + f"Your score is {diff} point{'s' if diff != 1 else ''} lower than the current leaderboard high score: {high_score}")
             print(Fore.RESET, end="")
@@ -14,7 +14,6 @@ def print_leaderboard_summary(best_score, leaderboard_data):
             print(Fore.CYAN + f"You are tied for the high score! Rank: {rank} out of {len(leaderboard_scores)}")
             print(Fore.RESET, end="")
         else:
-            diff = best_score - high_score
             print(Fore.GREEN + f"\nCongratulations! Your best score of {best_score} beat the current score of {high_score} by {diff} point{'s' if diff != 1 else ''}!")
             print(Fore.GREEN + f"You are now #1 on the leaderboard! Rank: {rank} out of {len(leaderboard_scores)}")
             print(Fore.RESET, end="")
