@@ -1,3 +1,28 @@
+from board import board_valid
+
+import pytest
+from board import board_valid
+
+@pytest.mark.parametrize("board, wordset, expected", [
+    # Disconnected case: 'UT' at (0,0) V and 'MOMMY' at (3,0) H, not connected
+    ([
+        ['U', '', '', 'O', 'W'],
+        ['T', '', 'V', 'I', 'A'],
+        ['', 'S', 'I', '', 'N'],
+        ['M', 'O', 'M', 'M', 'Y'],
+        ['I', '', 'S', 'I', '']
+    ], {'UT', 'MOMMY', 'O', 'W', 'V', 'I', 'A', 'S', 'N'}, False),
+    # Single-word case: only 'CAT' on the board
+    ([
+        ['C', 'A', 'T', '', ''],
+        ['', '', '', '', ''],
+        ['', '', '', '', ''],
+        ['', '', '', '', ''],
+        ['', '', '', '', '']
+    ], {'CAT'}, True),
+])
+def test_board_connectivity(board, wordset, expected):
+    assert board_valid(board, wordset) is expected
 import io
 import time
 import re
