@@ -1,4 +1,3 @@
-
 from collections import Counter
 import concurrent.futures
 import time
@@ -232,6 +231,15 @@ def full_beam_search(board, rack_count, words, wordset, placed, original_bonus, 
     best_moves = None
     move_num = 1
 
+    # Accept initial state if it contains a valid board and no moves
+    if not words:
+        from board import board_valid
+        if board_valid(board, wordset):
+            best_score = cached_board_score(board_to_tuple(board), board_to_tuple(original_bonus))
+            best_board = board
+            best_moves = []
+            return best_score, best_board, best_moves
+
     while state and move_num <= max_moves:
         t0 = time.time()
         next_state = []
@@ -305,6 +313,15 @@ def beam_from_first(play, board, rack_count, words, wordset, original_bonus, bea
     )
     return (score, final_board, [(play[0], play_word, play[2], play[3], play[4])] + (moves if moves else []))
 
+def explore_alternatives(play, board, rack_count, pruned_words, wordset, original_bonus, beam_width, max_moves):
+    """Helper function to explore alternative moves for a given start word."""
+    score, board_result, moves = beam_from_first(
+        play, board, rack_count, pruned_words, wordset, original_bonus, beam_width, max_moves
+    )
+    if board_result and board_valid(board_result, wordset):
+        return score, board_result, moves
+    return None, None, None
+
 def parallel_first_beam(board, rack, words, wordset, original_bonus, beam_width=5, num_games=100, first_moves=None, max_moves=20):
     """Search game states starting from multiple first moves in parallel.
 
@@ -353,12 +370,12 @@ def parallel_first_beam(board, rack, words, wordset, original_bonus, beam_width=
     results = []
     best_total = float('-inf')
     best_results = []
-    # Track boards that have been printed for the current best_total
     seen_best_boards = set()
+
     with concurrent.futures.ProcessPoolExecutor() as executor:
         future_to_info = {
             executor.submit(
-                beam_from_first, play, board, rack_count, pruned_words, wordset, original_bonus, beam_width, max_moves
+                explore_alternatives, play, board, rack_count, pruned_words, wordset, original_bonus, beam_width, max_moves
             ): (time.time(), play, i)
             for i, play in enumerate(first_choices)
         }

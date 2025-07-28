@@ -122,6 +122,8 @@ def score_word(letters, bonuses):
 
 def board_valid(board, wordset):
     letter_mask = get_letter_mask(board)
+    words = []
+    word_positions = []
     # Horizontal
     for r in range(N):
         c = 0
@@ -134,6 +136,8 @@ def board_valid(board, wordset):
                     word = ''.join(board[r][start:c])
                     if word not in wordset:
                         return False
+                    words.append(word)
+                    word_positions.append([(r, cc) for cc in range(start, c)])
             else:
                 c += 1
     # Vertical
@@ -148,6 +152,28 @@ def board_valid(board, wordset):
                     word = ''.join(board[i][c] for i in range(start, r))
                     if word not in wordset:
                         return False
+                    words.append(word)
+                    word_positions.append([(rr, c) for rr in range(start, r)])
             else:
                 r += 1
-    return True
+    if not words:
+        return False
+    if len(words) == 1:
+        return True
+    # Check connectivity: all word positions must be part of a single connected component
+    from collections import deque
+    visited = set()
+    queue = deque(word_positions[0])
+    while queue:
+        pos = queue.popleft()
+        if pos in visited:
+            continue
+        visited.add(pos)
+        r, c = pos
+        for dr, dc in [(-1,0),(1,0),(0,-1),(0,1)]:
+            nr, nc = r+dr, c+dc
+            if 0 <= nr < N and 0 <= nc < N and letter_mask[nr][nc] and (nr, nc) not in visited:
+                queue.append((nr, nc))
+    # All positions in all words must be visited
+    all_positions = set(pos for positions in word_positions for pos in positions)
+    return all_positions.issubset(visited)
