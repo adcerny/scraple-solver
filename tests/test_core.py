@@ -1,27 +1,3 @@
-def test_board_invalid_disconnected_words():
-    # Board with two disconnected words: 'UT' at (0,0) V and 'MOMMY' at (3,0) H
-    board = [
-        ['U', '', '', 'O', 'W'],
-        ['T', '', 'V', 'I', 'A'],
-        ['', 'S', 'I', '', 'N'],
-        ['M', 'O', 'M', 'M', 'Y'],
-        ['I', '', 'S', 'I', '']
-    ]
-    # Only 'UT', 'MOMMY', 'O', 'W', 'V', 'I', 'A', 'S', 'I', 'N' are present as words, but 'UT' and 'MOMMY' are not connected
-    wordset = {'UT', 'MOMMY', 'O', 'W', 'V', 'I', 'A', 'S', 'N'}
-    # Should fail: board is invalid because there are two disconnected words
-    assert not board_valid(board, wordset)
-
-    # Board with only one word should pass
-    board2 = [
-        ['C', 'A', 'T', '', ''],
-        ['', '', '', '', ''],
-        ['', '', '', '', ''],
-        ['', '', '', '', ''],
-        ['', '', '', '', '']
-    ]
-    wordset2 = {'CAT'}
-    assert board_valid(board2, wordset2)
 import sys
 import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))

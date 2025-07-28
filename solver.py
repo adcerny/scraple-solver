@@ -4,17 +4,16 @@ def print_leaderboard_summary(best_score, leaderboard_data):
     if leaderboard_scores:
         rank = 1 + sum(1 for s in leaderboard_scores if s > best_score)
         high_score = max(leaderboard_scores)
-        diff = abs(best_score - high_score)
         if best_score < high_score:
             print(Fore.LIGHTYELLOW_EX + f"\nYour best score ({best_score}) would rank: {rank} out of {len(leaderboard_scores)} on the current leaderboard.")
-            print(Fore.LIGHTYELLOW_EX + f"Your score is {diff} point{'s' if diff != 1 else ''} lower than the current leaderboard high score: {high_score}")
+            print(Fore.LIGHTYELLOW_EX + f"Your score is lower than the current leaderboard high score: {high_score}")
             print(Fore.RESET, end="")
         elif best_score == high_score:
             print(Fore.CYAN + f"\nYour best score ({best_score}) matches the current leaderboard high score!")
             print(Fore.CYAN + f"You are tied for the high score! Rank: {rank} out of {len(leaderboard_scores)}")
             print(Fore.RESET, end="")
         else:
-            print(Fore.GREEN + f"\nCongratulations! Your best score of {best_score} beat the current score of {high_score} by {diff} point{'s' if diff != 1 else ''}!")
+            print(Fore.GREEN + f"\nCongratulations! Your best score ({best_score}) is the new high score!")
             print(Fore.GREEN + f"You are now #1 on the leaderboard! Rank: {rank} out of {len(leaderboard_scores)}")
             print(Fore.RESET, end="")
     else:
@@ -164,7 +163,7 @@ def run_solver():
         })
         utils.log_puzzle_to_file(api_response)
 
-    print("Today's Board:\n")
+    print("Today's Board:")
     print_board(board)
     print("Rack:", ' '.join(rack))
     original_bonus = [row[:] for row in board]
@@ -175,12 +174,7 @@ def run_solver():
         if leaderboard_scores:
             high_score = max(leaderboard_scores)
             highscore_entries = [entry for entry in leaderboard_data.get("scores", []) if entry["score"] == high_score]
-            print(Fore.LIGHTYELLOW_EX + f"\nCurrent leaderboard high score: {high_score}")
-            if len(highscore_entries) > 1:
-                print(Fore.LIGHTYELLOW_EX + f"There are {len(highscore_entries)} entries with this high score:")
-            else:
-                print(Fore.LIGHTYELLOW_EX + "Displaying the high score board:")
-                print(Fore.LIGHTYELLOW_EX + "\nCurrent High Score Board Layout:\n")
+            print(Fore.LIGHTYELLOW_EX + "\nCurrent High Score Board Layout:")
             from board import leaderboard_gamestate_to_board, print_board as print_board_func
             for entry in highscore_entries:
                 game_state = entry.get("gameState")
