@@ -1,4 +1,3 @@
-
 def print_leaderboard_summary(best_score, leaderboard_data):
     leaderboard_scores = [entry["score"] for entry in leaderboard_data.get("scores", [])]
     if leaderboard_scores:
@@ -6,15 +5,17 @@ def print_leaderboard_summary(best_score, leaderboard_data):
         high_score = max(leaderboard_scores)
         if best_score < high_score:
             print(Fore.LIGHTYELLOW_EX + f"\nYour best score ({best_score}) would rank: {rank} out of {len(leaderboard_scores)} on the current leaderboard.")
-            print(Fore.LIGHTYELLOW_EX + f"Your score is lower than the current leaderboard high score: {high_score}")
+            diff = high_score - best_score
+            print(Fore.LIGHTYELLOW_EX + f"Your score is {diff} points lower than the current leaderboard high score of {high_score}")
             print(Fore.RESET, end="")
         elif best_score == high_score:
             print(Fore.CYAN + f"\nYour best score ({best_score}) matches the current leaderboard high score!")
             print(Fore.CYAN + f"You are tied for the high score! Rank: {rank} out of {len(leaderboard_scores)}")
             print(Fore.RESET, end="")
         else:
-            print(Fore.GREEN + f"\nCongratulations! Your best score ({best_score}) is the new high score!")
-            print(Fore.GREEN + f"You are now #1 on the leaderboard! Rank: {rank} out of {len(leaderboard_scores)}")
+            diff = best_score - high_score
+            print(Fore.GREEN + f"\nCongratulations! Your score {best_score} is {diff} higher than the current high score of {high_score}")
+            print(Fore.GREEN + f"Your score would be #1 on the leaderboard! Rank: {rank} out of {len(leaderboard_scores)}")
             print(Fore.RESET, end="")
     else:
         print("Could not parse leaderboard scores.")
@@ -174,7 +175,7 @@ def run_solver():
         if leaderboard_scores:
             high_score = max(leaderboard_scores)
             highscore_entries = [entry for entry in leaderboard_data.get("scores", []) if entry["score"] == high_score]
-            print(Fore.LIGHTYELLOW_EX + "\nCurrent High Score Board Layout:")
+            print(Fore.LIGHTYELLOW_EX + f"\nCurrent High Score Board Layout (Score: {high_score}):")
             from board import leaderboard_gamestate_to_board, print_board as print_board_func
             for entry in highscore_entries:
                 game_state = entry.get("gameState")
