@@ -198,3 +198,37 @@ def test_start_pos_invalid_format(monkeypatch, capsys):
     solver.run_solver()
     out = capsys.readouterr().out
     assert "Invalid --start-word-pos format" in out
+
+
+def test_start_word_final_position(monkeypatch):
+    """Test that the start word is present at the specified start-pos in the final board after all moves."""
+    import sys
+    import solver
+    import utils
+    from utils import Direction
+    # Setup arguments
+    monkeypatch.setattr(sys, 'argv', [
+        'solver.py',
+        '--start-word', 'HI',
+        '--start-pos', '1,2,A',
+        '--depth', '2',
+        '--beam-width', '2',
+        '--num-games', '1',
+        '--no-cache',
+    ])
+    # Provide a board and rack that allows the placement
+    monkeypatch.setattr(solver, 'fetch_board_and_rack', lambda: ([['' for _ in range(utils.N)] for _ in range(utils.N)], ['H', 'I', 'T'], None))
+    monkeypatch.setattr(solver, 'load_dictionary', lambda: (['HI', 'IT'], set(['HI', 'IT']), ''))
+    # Capture the final board
+    final_board = {}
+    def fake_print_board(board, bonus=None):
+        final_board['board'] = [row[:] for row in board]
+    monkeypatch.setattr(solver, 'print_board', fake_print_board)
+    solver.run_solver()
+    board = final_board.get('board')
+    assert board is not None, "Final board was not captured"
+    # Check that 'HI' is present at (1,2) ACROSS
+    row, col = 1, 2
+    word = 'HI'
+    for i, ch in enumerate(word):
+        assert board[row][col + i] == ch, f"Expected '{ch}' at ({row},{col + i})"
