@@ -204,16 +204,16 @@ def test_improve_leaderboard(monkeypatch):
     import solver
     import board
 
-    board_hs = [['A'] + [''] * (utils.N - 1)] + [['' for _ in range(utils.N)] for _ in range(utils.N - 1)]
+    board_hs = [['A', 'B'] + [''] * (utils.N - 2)] + [['' for _ in range(utils.N)] for _ in range(utils.N - 1)]
     bonus_hs = [['' for _ in range(utils.N)] for _ in range(utils.N)]
     leaderboard_data = {
         "scores": [
             {
-                "score": 10,
+                "score": 4,
                 "gameState": {
                     "bonusTilePositions": {},
-                    "placedTiles": {"0-0": {"letter": "A"}},
-                    "rack": ["B"]
+                    "placedTiles": {"0-0": {"letter": "A"}, "0-1": {"letter": "B"}},
+                    "rack": ["C"]
                 },
             }
         ]
@@ -252,7 +252,7 @@ def test_improve_leaderboard(monkeypatch):
 
     captured = {}
     def fake_pfb(b, r, w, ws, ob, **kwargs):
-        captured['board'] = b
+        captured['board'] = [row[:] for row in b]
         captured['bonus'] = ob
         captured['rack'] = list(r)
         return 0, []
@@ -262,6 +262,7 @@ def test_improve_leaderboard(monkeypatch):
     monkeypatch.setattr(sys, 'argv', ['solver.py', '--improve-leaderboard', '--num-games', '1', '--beam-width', '1', '--depth', '1', '--no-cache'])
     solver.run_solver()
 
-    assert captured['board'] == board_hs
     assert captured['bonus'] == bonus_hs
-    assert 'B' in captured['rack']
+    assert captured['board'][0][0] == ''
+    assert captured['board'][0][1] == ''
+    assert Counter(captured['rack']) == Counter(['A', 'B', 'C'])
