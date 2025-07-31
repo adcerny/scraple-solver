@@ -136,3 +136,64 @@ def test_output_and_dedup(run_games):
     assert clean.count(' H  I') == 2
     # Results list should only keep unique boards
     assert len(results) == 2
+
+def test_start_pos_happy(monkeypatch, capsys):
+    """Test --start-word and --start-pos with a valid position."""
+    import solver
+    monkeypatch.setattr(sys, 'argv', [
+        'solver.py',
+        '--start-word', 'HI',
+        '--start-pos', '0,0,V',
+        '--depth', '2',
+        '--beam-width', '2',
+        '--num-games', '1',
+        '--no-cache',
+    ])
+    monkeypatch.setattr(solver, 'fetch_board_and_rack', lambda: ([['' for _ in range(utils.N)] for _ in range(utils.N)], ['H', 'I', 'I', 'T'], None))
+    monkeypatch.setattr(solver, 'load_dictionary', lambda: (['HI', 'IT'], set(['HI', 'IT']), ''))
+    monkeypatch.setattr(solver, 'print_board', lambda board, bonus=None: None)
+    solver.run_solver()
+    out = capsys.readouterr().out
+    assert "Best placement for 'HI':" in out
+    assert "score" in out
+    assert "position (0,0) V" in out
+
+
+def test_start_pos_impossible(monkeypatch, capsys):
+    """Test --start-word and --start-pos with an impossible position."""
+    import solver
+    monkeypatch.setattr(sys, 'argv', [
+        'solver.py',
+        '--start-word', 'HI',
+        '--start-pos', '5,5,H',
+        '--depth', '2',
+        '--beam-width', '2',
+        '--num-games', '1',
+        '--no-cache',
+    ])
+    monkeypatch.setattr(solver, 'fetch_board_and_rack', lambda: ([['' for _ in range(utils.N)] for _ in range(utils.N)], ['H', 'I', 'I', 'T'], None))
+    monkeypatch.setattr(solver, 'load_dictionary', lambda: (['HI', 'IT'], set(['HI', 'IT']), ''))
+    monkeypatch.setattr(solver, 'print_board', lambda board, bonus=None: None)
+    solver.run_solver()
+    out = capsys.readouterr().out
+    assert "Cannot place start word 'HI' at (5,5) H." in out
+
+
+def test_start_pos_invalid_format(monkeypatch, capsys):
+    """Test --start-pos with invalid format."""
+    import solver
+    monkeypatch.setattr(sys, 'argv', [
+        'solver.py',
+        '--start-word', 'HI',
+        '--start-pos', 'badformat',
+        '--depth', '2',
+        '--beam-width', '2',
+        '--num-games', '1',
+        '--no-cache',
+    ])
+    monkeypatch.setattr(solver, 'fetch_board_and_rack', lambda: ([['' for _ in range(utils.N)] for _ in range(utils.N)], ['H', 'I', 'I', 'T'], None))
+    monkeypatch.setattr(solver, 'load_dictionary', lambda: (['HI', 'IT'], set(['HI', 'IT']), ''))
+    monkeypatch.setattr(solver, 'print_board', lambda board, bonus=None: None)
+    solver.run_solver()
+    out = capsys.readouterr().out
+    assert "Invalid --start-word-pos format" in out

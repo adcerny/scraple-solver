@@ -104,6 +104,7 @@ def run_solver():
                         help='After initial search, explore all subsequent moves for the best starting word. Optionally specify beam width (default: 1000)')
     parser.add_argument('--load-log', type=str, default=None, help='Path to a JSON log file to load the puzzle from instead of calling the API')
     parser.add_argument('--start-word', type=str, default=None, help='Specify a start word to force as the first move')
+    parser.add_argument('--start-pos', type=str, default=None, help='Specify position and direction for start word as "row,col,dir" (e.g. "7,7,H"). Only valid if --start-word is provided.')
     parser.add_argument('--num-games', type=int, default=50, help='Number of games to play in parallel (default: 50)')
     args = parser.parse_args()
 
@@ -198,33 +199,60 @@ def run_solver():
             log_with_time(f"Cannot form start word '{start_word}' from rack: {' '.join(rack)}", color=Fore.RED)
             return
         from search import find_best, beam_from_first, prune_words
-        # Prune words before placing the start word
         pruned_words = prune_words(words, rack_counter, board)
         log_with_time(f"Pruned word list: {len(pruned_words)} words", color=Fore.CYAN)
-        # Find all valid placements for the start word
-        valid_placements = find_best(
-            board,
-            rack_counter,
-            [start_word],
-            wordset,
-            None,
-            original_bonus,
-            top_k=None
-        )
-        if not valid_placements:
-            log_with_time(f"No valid placements for start word '{start_word}' on the board.", color=Fore.RED)
-            return
-        best_placement = max(valid_placements, key=lambda x: x[0])
-        log_with_time(f"Best placement for '{start_word}': score {best_placement[0]}, position ({best_placement[3]},{best_placement[4]}) {best_placement[2]}", color=Fore.YELLOW)
-        # Remove start word letters from rack for pruning
+        # If position is specified, validate and use it
+        placement = None
+        if args.start_pos:
+            try:
+                row, col, dirn = args.start_pos.split(',')
+                row = int(row)
+                col = int(col)
+                dirn = dirn.upper()
+                # Find all valid placements for the start word
+                valid_placements = find_best(
+                    board,
+                    rack_counter,
+                    [start_word],
+                    wordset,
+                    None,
+                    original_bonus,
+                    top_k=None
+                )
+                # Find placement matching user input
+                for p in valid_placements:
+                    # p = (score, word, dir, row, col, ...)
+                    if p[2] == dirn and p[3] == row and p[4] == col:
+                        placement = p
+                        break
+                if not placement:
+                    log_with_time(f"Cannot place start word '{start_word}' at ({row},{col}) {dirn}.", color=Fore.RED)
+                    return
+            except Exception as e:
+                log_with_time(f"Invalid --start-word-pos format. Use row,col,dir (e.g. 7,7,H). Error: {e}", color=Fore.RED)
+                return
+        else:
+            valid_placements = find_best(
+                board,
+                rack_counter,
+                [start_word],
+                wordset,
+                None,
+                original_bonus,
+                top_k=None
+            )
+            if not valid_placements:
+                log_with_time(f"No valid placements for start word '{start_word}' on the board.", color=Fore.RED)
+                return
+            placement = max(valid_placements, key=lambda x: x[0])
+        log_with_time(f"Best placement for '{start_word}': score {placement[0]}, position ({placement[3]},{placement[4]}) {placement[2]}", color=Fore.YELLOW)
         rack_after_first = rack_counter.copy()
         for ch in start_word:
             rack_after_first[ch] -= 1
             if rack_after_first[ch] == 0:
                 del rack_after_first[ch]
-        # Do NOT prune words again after start word
         score, board_after, moves = beam_from_first(
-            best_placement,
+            placement,
             board,
             rack_counter,
             pruned_words,
