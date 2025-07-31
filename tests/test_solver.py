@@ -198,3 +198,54 @@ def test_start_pos_invalid_format(monkeypatch, capsys):
     solver.run_solver()
     out = capsys.readouterr().out
     assert "Invalid --start-word-pos format" in out
+
+
+def test_improve_leaderboard(monkeypatch, capsys):
+    import solver
+    import utils
+    import board as board_module
+
+    monkeypatch.setattr(sys, 'argv', [
+        'solver.py',
+        '--improve-leaderboard',
+        '--depth', '2',
+        '--beam-width', '2',
+        '--num-games', '1',
+        '--no-cache',
+    ])
+
+    empty_board = [['' for _ in range(utils.N)] for _ in range(utils.N)]
+    monkeypatch.setattr(solver, 'fetch_board_and_rack', lambda: (empty_board, ['H', 'I'], None))
+    monkeypatch.setattr(solver, 'load_dictionary', lambda: (['HI'], set(['HI']), ''))
+    monkeypatch.setattr(solver, 'print_board', lambda *a, **kw: None)
+    monkeypatch.setattr(board_module, 'print_board', lambda *a, **kw: None)
+
+    class FakeResp:
+        def __init__(self, data):
+            self._data = data
+        def raise_for_status(self):
+            pass
+        def json(self):
+            return self._data
+
+    leaderboard_payload = {
+        'scores': [
+            {
+                'score': 5,
+                'gameState': {
+                    'bonusTilePositions': {},
+                    'placedTiles': {
+                        '0-0': {'letter': 'H'},
+                        '0-1': {'letter': 'I'},
+                    }
+                }
+            }
+        ]
+    }
+
+    monkeypatch.setattr(solver.requests, 'get', lambda *a, **kw: FakeResp(leaderboard_payload))
+    monkeypatch.setattr(solver, 'parallel_first_beam', lambda *a, **kw: (0, []))
+
+    solver.run_solver()
+    out = capsys.readouterr().out
+    assert 'Improving leaderboard high score' in out
