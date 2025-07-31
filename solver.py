@@ -106,6 +106,8 @@ def run_solver():
     parser.add_argument('--start-word', type=str, default=None, help='Specify a start word to force as the first move')
     parser.add_argument('--start-pos', type=str, default=None, help='Specify position and direction for start word as "row,col,dir" (e.g. "7,7,A"). Only valid if --start-word is provided.')
     parser.add_argument('--num-games', type=int, default=50, help='Number of games to play in parallel (default: 50)')
+    parser.add_argument('--improve-leaderboard', action='store_true',
+                        help='Start search from the current leaderboard high-score board')
     args = parser.parse_args()
 
     beam_width = args.beam_width
@@ -178,15 +180,43 @@ def run_solver():
             highscore_entries = [entry for entry in leaderboard_data.get("scores", []) if entry["score"] == high_score]
             print(Fore.LIGHTYELLOW_EX + f"\nCurrent High Score Board Layout (Score: {high_score}):")
             from board import leaderboard_gamestate_to_board, print_board as print_board_func
+            board_hs = bonus_hs = None
+            game_state_hs = None
             for entry in highscore_entries:
                 game_state = entry.get("gameState")
                 if game_state:
                     try:
                         board_hs, bonus_hs = leaderboard_gamestate_to_board(game_state)
+                        if game_state_hs is None:
+                            game_state_hs = game_state
                         print_board_func(board_hs, bonus_hs)
                     except Exception as e:
                         print(Fore.LIGHTYELLOW_EX + f"    (Could not display board: {e})")
             print(Fore.RESET, end="")
+
+            if args.improve_leaderboard and board_hs is not None:
+                board = board_hs
+                original_bonus = bonus_hs
+                if game_state_hs:
+                    remaining = (
+                        game_state_hs.get('rack') or
+                        game_state_hs.get('remainingTiles') or
+                        game_state_hs.get('letters')
+                    )
+                    if remaining:
+                        extra = []
+                        items = remaining.values() if isinstance(remaining, dict) else remaining
+                        for item in items:
+                            if isinstance(item, dict):
+                                letter = item.get('letter')
+                                if letter:
+                                    extra.append(letter.upper())
+                            elif isinstance(item, str):
+                                if len(item) == 1:
+                                    extra.append(item.upper())
+                                else:
+                                    extra.extend(ch.upper() for ch in item)
+                        rack += extra
     # words, wordset already loaded above
 
     # If --start-word is provided, check if it can be formed from the rack and use it as the first move
