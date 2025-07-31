@@ -246,7 +246,10 @@ def run_solver():
                 log_with_time(f"No valid placements for start word '{start_word}' on the board.", color=Fore.RED)
                 return
             placement = max(valid_placements, key=lambda x: x[0])
-        log_with_time(f"Best placement for '{start_word}': score {placement[0]}, position {placement[3]},{placement[4]},{placement[2]}", color=Fore.YELLOW)
+        log_with_time(
+            f"Best placement for '{start_word}': score {placement[0]}, position {placement[3]},{placement[4]},{placement[2].value}",
+            color=Fore.YELLOW,
+        )
         rack_after_first = rack_counter.copy()
         for ch in start_word:
             rack_after_first[ch] -= 1
@@ -266,7 +269,10 @@ def run_solver():
         log_with_time("Move sequence:", color=Fore.GREEN)
         for move in moves:
             sc, w, d, r0, c0 = move
-            log_with_time(f"  {w} at {r0},{c0},{d} scoring {sc}", color=Fore.GREEN)
+            log_with_time(
+                f"  {w} at {r0},{c0},{d.value} scoring {sc}",
+                color=Fore.GREEN,
+            )
         log_with_time("Final simulated board:", color=Fore.GREEN)
         print()
         print_board(board_after, original_bonus)
@@ -303,7 +309,10 @@ def run_solver():
         log_with_time("Move sequence:", color=Fore.GREEN)
         for move in best_moves:
             sc, w, d, r0, c0 = move
-            log_with_time(f"  {w} at {r0},{c0},{d} scoring {sc}", color=Fore.GREEN)
+            log_with_time(
+                f"  {w} at {r0},{c0},{d.value} scoring {sc}",
+                color=Fore.GREEN,
+            )
         log_with_time("Final simulated board:", color=Fore.GREEN)
         print()
         print_board(best_board, original_bonus)
@@ -327,7 +336,7 @@ def run_solver():
 
         if best_first_move:
             log_with_time(
-                f"High score deep dive starting from {best_first_move[1]} at {best_first_move[3]},{best_first_move[4]},{best_first_move[2]}",
+                f"High score deep dive starting from {best_first_move[1]} at {best_first_move[3]},{best_first_move[4]},{best_first_move[2].value}",
                 color=Fore.YELLOW,
             )
             rack_count = Counter(rack)
@@ -350,7 +359,7 @@ def run_solver():
                 for move in dive_moves:
                     sc, w, d, r0, c0 = move
                     log_with_time(
-                        f"  {w} at {r0},{c0},{d} scoring {sc}",
+                        f"  {w} at {r0},{c0},{d.value} scoring {sc}",
                         color=Fore.YELLOW,
                     )
                 log_with_time("Final board:", color=Fore.YELLOW)
