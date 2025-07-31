@@ -102,6 +102,8 @@ def run_solver():
     parser.add_argument('--log-puzzle', action='store_true', help='Save the day\'s puzzle and best result to a JSON log file')
     parser.add_argument('--high-score-deep-dive', nargs='?', const=1000, type=int,
                         help='After initial search, explore all subsequent moves for the best starting word. Optionally specify beam width (default: 1000)')
+    parser.add_argument('--improve-leaderboard', action='store_true',
+                        help="Use today's leaderboard high score layout and attempt to find a better scoring arrangement")
     parser.add_argument('--load-log', type=str, default=None, help='Path to a JSON log file to load the puzzle from instead of calling the API')
     parser.add_argument('--start-word', type=str, default=None, help='Specify a start word to force as the first move')
     parser.add_argument('--start-pos', type=str, default=None, help='Specify position and direction for start word as "row,col,dir" (e.g. "7,7,A"). Only valid if --start-word is provided.')
@@ -154,6 +156,26 @@ def run_solver():
                 leaderboard_data = leaderboard_resp.json()
             except Exception:
                 leaderboard_data = None
+
+    if args.improve_leaderboard:
+        if leaderboard_data and leaderboard_data.get("scores"):
+            best_entry = max(leaderboard_data["scores"], key=lambda e: e.get("score", 0))
+            game_state = best_entry.get("gameState")
+            if game_state:
+                from board import leaderboard_gamestate_to_board, print_board as print_board_func
+                board_hs, bonus_hs = leaderboard_gamestate_to_board(game_state)
+                rack = [ch for row in board_hs for ch in row if len(ch) == 1]
+                log_with_time(
+                    f"Improving leaderboard high score {best_entry['score']} using letters: {' '.join(rack)}",
+                    color=Fore.YELLOW,
+                )
+                print_board_func(board_hs, bonus_hs)
+            else:
+                log_with_time("Leaderboard high score has no game state", color=Fore.RED)
+                return
+        else:
+            log_with_time("Leaderboard data unavailable; cannot improve", color=Fore.RED)
+            return
 
     # Log the puzzle if the argument is provided
     if args.log_puzzle:
