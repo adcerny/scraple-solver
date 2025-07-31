@@ -156,52 +156,49 @@ def test_solver_runs_with_random_board_and_dictionary():
 
 def test_solver_runs_with_random_start_word():
     from search import find_best, beam_from_first, prune_words
-    # Generate a random dictionary of 100 words, length 2-5
     words = [''.join(random.choices(string.ascii_uppercase, k=random.randint(2, 5))) for _ in range(100)]
     wordset = set(words)
-    # Pick a random start word from the dictionary
-    start_word = random.choice(words)
-    # Build a rack that can always form the start word
-    rack = list(start_word)
-    # Fill the rest of the rack with random letters
-    while len(rack) < 5:
-        rack.append(random.choice(string.ascii_uppercase))
-    random.shuffle(rack)
-    rack_counter = Counter(rack)
-    # Generate a random board with random bonus squares
-    board = [['' for _ in range(N)] for _ in range(N)]
-    bonus_types = ['DL', 'TL', 'DW', 'TW', '']
-    for _ in range(random.randint(5, 10)):
-        r = random.randint(0, N-1)
-        c = random.randint(0, N-1)
-        board[r][c] = random.choice(bonus_types[:-1])
-    original_bonus = [row[:] for row in board]
-    pruned_words = prune_words(words, rack_counter, board)
-    valid_placements = find_best(
-        board,
-        rack_counter,
-        [start_word],
-        wordset,
-        None,
-        original_bonus,
-        top_k=None
-    )
-    if not valid_placements:
-        pytest.skip("No valid placements for start word")
-    best_placement = max(valid_placements, key=lambda x: x[0])
-    try:
-        score, board_after, moves = beam_from_first(
-            best_placement,
+    attempts = 0
+    while attempts < 100:
+        start_word = random.choice(words)
+        rack = list(start_word)
+        while len(rack) < 5:
+            rack.append(random.choice(string.ascii_uppercase))
+        random.shuffle(rack)
+        rack_counter = Counter(rack)
+        board = [['' for _ in range(N)] for _ in range(N)]
+        bonus_types = ['DL', 'TL', 'DW', 'TW', '']
+        for _ in range(random.randint(5, 10)):
+            r = random.randint(0, N-1)
+            c = random.randint(0, N-1)
+            board[r][c] = random.choice(bonus_types[:-1])
+        original_bonus = [row[:] for row in board]
+        pruned_words = prune_words(words, rack_counter, board)
+        valid_placements = find_best(
             board,
             rack_counter,
-            pruned_words,
+            [start_word],
             wordset,
+            None,
             original_bonus,
-            beam_width=200,
-            max_moves=10
+            top_k=None
         )
-        assert isinstance(score, (int, float))
-        assert board_after is not None
-        assert isinstance(moves, list)
-    except Exception as e:
-        pytest.fail(f"Solver with start word raised an exception: {e}")
+        if valid_placements:
+            best_placement = max(valid_placements, key=lambda x: x[0])
+            score, board_after, moves = beam_from_first(
+                best_placement,
+                board,
+                rack_counter,
+                pruned_words,
+                wordset,
+                original_bonus,
+                beam_width=200,
+                max_moves=10
+            )
+            if board_after is not None:
+                assert isinstance(score, (int, float))
+                assert board_after is not None
+                assert isinstance(moves, list)
+                return
+        attempts += 1
+    pytest.fail("Could not find a start word and rack with a valid board after 100 attempts")
