@@ -28,7 +28,7 @@ import utils
 from utils import N, MAPPING, log_with_time, vlog, LETTER_SCORES, Direction
 import os
 from colorama import Fore
-from board import print_board, compute_board_score
+from board import print_board, compute_board_score, get_letter_mask, score_word
 import time  # Ensure time is available in imported modules
 from functools import lru_cache
 from score_cache import board_to_tuple, cached_board_score
@@ -47,6 +47,59 @@ from search import parallel_first_beam
 API_URL  = 'https://scraple.io/api/daily-puzzle'
 DICT_URL = 'https://scraple.io/dictionary.txt'
 LEADERBOARD_URL = 'https://scraple.io/api/leaderboard'
+
+
+def extract_words_with_scores(board, bonus):
+    """Return a list of (score, word, positions) for all words on ``board``."""
+    words = []
+    mask = get_letter_mask(board)
+    for r in range(N):
+        c = 0
+        while c < N:
+            if mask[r][c]:
+                start = c
+                while c < N and mask[r][c]:
+                    c += 1
+                if c - start >= 2:
+                    letters = board[r][start:c]
+                    bonuses = bonus[r][start:c]
+                    positions = [(r, cc) for cc in range(start, c)]
+                    words.append((score_word(letters, bonuses), ''.join(letters), positions))
+            else:
+                c += 1
+    for c in range(N):
+        r = 0
+        while r < N:
+            if mask[r][c]:
+                start = r
+                while r < N and mask[r][c]:
+                    r += 1
+                if r - start >= 2:
+                    letters = [board[i][c] for i in range(start, r)]
+                    bonuses = [bonus[i][c] for i in range(start, r)]
+                    positions = [(i, c) for i in range(start, r)]
+                    words.append((score_word(letters, bonuses), ''.join(letters), positions))
+            else:
+                r += 1
+    return words
+
+
+def remove_word_from_board(board, bonus, rack, positions, usage):
+    """Remove letters for a word while tracking overlaps.
+
+    Only clear a tile when it is no longer part of any remaining word.
+    Letters cleared from the board are appended back to ``rack``.
+    ``usage`` maps ``(row, col)`` to the number of words that use that tile."""
+    for r, c in positions:
+        if (r, c) not in usage:
+            continue
+        letter = board[r][c]
+        usage[(r, c)] -= 1
+        if usage[(r, c)] == 0:
+            if letter:
+                rack.append(letter)
+            board[r][c] = bonus[r][c] if bonus[r][c] else ''
+            del usage[(r, c)]
 
 def fetch_board_and_rack():
     resp = requests.get(API_URL)
@@ -106,6 +159,8 @@ def run_solver():
     parser.add_argument('--start-word', type=str, default=None, help='Specify a start word to force as the first move')
     parser.add_argument('--start-pos', type=str, default=None, help='Specify position and direction for start word as "row,col,dir" (e.g. "7,7,A"). Only valid if --start-word is provided.')
     parser.add_argument('--num-games', type=int, default=50, help='Number of games to play in parallel (default: 50)')
+    parser.add_argument('--improve-leaderboard', action='store_true',
+                        help='Start search from the current leaderboard high-score board')
     args = parser.parse_args()
 
     beam_width = args.beam_width
@@ -115,6 +170,9 @@ def run_solver():
 
     utils.start_time = time.time()
     utils.VERBOSE = args.verbose
+    improvement_done = False
+    best_total = None
+    best_results = None
 
     # Pass cache disable flag to score_cache
     import score_cache
@@ -178,15 +236,81 @@ def run_solver():
             highscore_entries = [entry for entry in leaderboard_data.get("scores", []) if entry["score"] == high_score]
             print(Fore.LIGHTYELLOW_EX + f"\nCurrent High Score Board Layout (Score: {high_score}):")
             from board import leaderboard_gamestate_to_board, print_board as print_board_func
+            board_hs = bonus_hs = None
+            game_state_hs = None
             for entry in highscore_entries:
                 game_state = entry.get("gameState")
                 if game_state:
                     try:
                         board_hs, bonus_hs = leaderboard_gamestate_to_board(game_state)
+                        if game_state_hs is None:
+                            game_state_hs = game_state
                         print_board_func(board_hs, bonus_hs)
                     except Exception as e:
                         print(Fore.LIGHTYELLOW_EX + f"    (Could not display board: {e})")
             print(Fore.RESET, end="")
+
+            if args.improve_leaderboard and board_hs is not None:
+                board = [row[:] for row in board_hs]
+                original_bonus = bonus_hs
+                rack = []
+                if game_state_hs:
+                    remaining = (
+                        game_state_hs.get('rack') or
+                        game_state_hs.get('remainingTiles') or
+                        game_state_hs.get('letters')
+                    )
+                    if remaining:
+                        items = remaining.values() if isinstance(remaining, dict) else remaining
+                        for item in items:
+                            if isinstance(item, dict):
+                                letter = item.get('letter')
+                                if letter:
+                                    rack.append(letter.upper())
+                            elif isinstance(item, str):
+                                if len(item) == 1:
+                                    rack.append(item.upper())
+                                else:
+                                    rack.extend(ch.upper() for ch in item)
+                words_on_board = extract_words_with_scores(board, original_bonus)
+                words_on_board.sort(key=lambda x: x[0])
+                usage = {}
+                for _, _, pos_list in words_on_board:
+                    for pos in pos_list:
+                        usage[pos] = usage.get(pos, 0) + 1
+                improved = False
+                for _, word_text, positions in words_on_board:
+                    remove_word_from_board(board, original_bonus, rack, positions, usage)
+                    new_score, new_results = parallel_first_beam(
+                        board,
+                        rack,
+                        words,
+                        wordset,
+                        original_bonus,
+                        beam_width=beam_width,
+                        num_games=num_games,
+                        first_moves=first_moves,
+                        max_moves=max_moves,
+                    )
+                    improvement_done = True
+                    if new_score > high_score:
+                        best_total = new_score
+                        best_results = new_results
+                        improved = True
+                        break
+                if not improved:
+                    best_total, best_results = parallel_first_beam(
+                        board,
+                        rack,
+                        words,
+                        wordset,
+                        original_bonus,
+                        beam_width=beam_width,
+                        num_games=num_games,
+                        first_moves=first_moves,
+                        max_moves=max_moves,
+                    )
+                    improvement_done = True
     # words, wordset already loaded above
 
     # If --start-word is provided, check if it can be formed from the rack and use it as the first move
@@ -282,17 +406,18 @@ def run_solver():
             print_leaderboard_summary(score, leaderboard_data)
         return
 
-    best_total, best_results = parallel_first_beam(
-        board,
-        rack,
-        words,
-        wordset,
-        original_bonus,
-        beam_width=beam_width,
-        num_games=num_games,
-        first_moves=first_moves,
-        max_moves=max_moves,
-    )
+    if not improvement_done:
+        best_total, best_results = parallel_first_beam(
+            board,
+            rack,
+            words,
+            wordset,
+            original_bonus,
+            beam_width=beam_width,
+            num_games=num_games,
+            first_moves=first_moves,
+            max_moves=max_moves,
+        )
 
     if not best_results:
         log_with_time("No valid full simulation found.")

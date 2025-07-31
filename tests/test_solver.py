@@ -198,3 +198,80 @@ def test_start_pos_invalid_format(monkeypatch, capsys):
     solver.run_solver()
     out = capsys.readouterr().out
     assert "Invalid --start-word-pos format" in out
+
+
+def test_improve_leaderboard(monkeypatch):
+    import solver
+    import board
+
+    board_hs = [
+        ['W', 'E', 'B'] + [''] * (utils.N - 3),
+        ['I'] + [''] * (utils.N - 1),
+        ['D'] + [''] * (utils.N - 1),
+        ['E'] + [''] * (utils.N - 1),
+    ] + [['' for _ in range(utils.N)] for _ in range(utils.N - 4)]
+    bonus_hs = [['' for _ in range(utils.N)] for _ in range(utils.N)]
+    leaderboard_data = {
+        "scores": [
+            {
+                "score": 8,
+                "gameState": {
+                    "bonusTilePositions": {},
+                    "placedTiles": {
+                        "0-0": {"letter": "W"}, "0-1": {"letter": "E"}, "0-2": {"letter": "B"},
+                        "1-0": {"letter": "I"}, "2-0": {"letter": "D"}, "3-0": {"letter": "E"}
+                    },
+                    "rack": ["X"]
+                },
+            }
+        ]
+    }
+
+    class DummyFuture:
+        def __init__(self, result):
+            self._result = result
+        def result(self):
+            return self._result
+
+    class DummyExecutor:
+        def submit(self, fn, *args, **kwargs):
+            return DummyFuture(fn(*args, **kwargs))
+        def __enter__(self):
+            return self
+        def __exit__(self, exc_type, exc, tb):
+            pass
+
+    monkeypatch.setattr(solver.concurrent.futures, 'ThreadPoolExecutor', lambda: DummyExecutor())
+
+    def fake_requests_get(url, timeout=10):
+        class Resp:
+            def raise_for_status(self):
+                pass
+            def json(self):
+                return leaderboard_data
+        return Resp()
+
+    monkeypatch.setattr(solver.requests, 'get', fake_requests_get)
+    monkeypatch.setattr(solver, 'fetch_board_and_rack', lambda: ([['' for _ in range(utils.N)] for _ in range(utils.N)], [], None))
+    monkeypatch.setattr(solver, 'load_dictionary', lambda: (['AB'], set(['AB']), ''))
+    monkeypatch.setattr(solver, 'print_board', lambda *a, **k: None)
+    monkeypatch.setattr(board, 'print_board', lambda *a, **k: None)
+    monkeypatch.setattr(board, 'leaderboard_gamestate_to_board', lambda gs: (board_hs, bonus_hs))
+
+    captured = []
+    def fake_pfb(b, r, w, ws, ob, **kwargs):
+        captured.append({'board': [row[:] for row in b], 'bonus': ob, 'rack': list(r)})
+        return 0, []
+
+    monkeypatch.setattr(solver, 'parallel_first_beam', fake_pfb)
+
+    monkeypatch.setattr(sys, 'argv', ['solver.py', '--improve-leaderboard', '--num-games', '1', '--beam-width', '1', '--depth', '1', '--no-cache'])
+    solver.run_solver()
+
+    first_call = captured[0]
+    assert first_call['bonus'] == bonus_hs
+    assert first_call['board'][0][0] == 'W'
+    assert first_call['board'][1][0] == 'I'
+    assert first_call['board'][0][1] == ''
+    assert first_call['board'][0][2] == ''
+    assert Counter(first_call['rack']) == Counter(['E', 'B', 'X'])
