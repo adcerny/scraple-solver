@@ -84,9 +84,22 @@ def extract_words_with_scores(board, bonus):
     return words
 
 
-def remove_word_from_board(board, bonus, positions):
+def remove_word_from_board(board, bonus, rack, positions, usage):
+    """Remove letters for a word while tracking overlaps.
+
+    Only clear a tile when it is no longer part of any remaining word.
+    Letters cleared from the board are appended back to ``rack``.
+    ``usage`` maps ``(row, col)`` to the number of words that use that tile."""
     for r, c in positions:
-        board[r][c] = bonus[r][c] if bonus[r][c] else ''
+        if (r, c) not in usage:
+            continue
+        letter = board[r][c]
+        usage[(r, c)] -= 1
+        if usage[(r, c)] == 0:
+            if letter:
+                rack.append(letter)
+            board[r][c] = bonus[r][c] if bonus[r][c] else ''
+            del usage[(r, c)]
 
 def fetch_board_and_rack():
     resp = requests.get(API_URL)
@@ -261,10 +274,13 @@ def run_solver():
                                     rack.extend(ch.upper() for ch in item)
                 words_on_board = extract_words_with_scores(board, original_bonus)
                 words_on_board.sort(key=lambda x: x[0])
+                usage = {}
+                for _, _, pos_list in words_on_board:
+                    for pos in pos_list:
+                        usage[pos] = usage.get(pos, 0) + 1
                 improved = False
                 for _, word_text, positions in words_on_board:
-                    remove_word_from_board(board, original_bonus, positions)
-                    rack.extend(list(word_text))
+                    remove_word_from_board(board, original_bonus, rack, positions, usage)
                     new_score, new_results = parallel_first_beam(
                         board,
                         rack,

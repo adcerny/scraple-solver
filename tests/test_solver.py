@@ -204,16 +204,24 @@ def test_improve_leaderboard(monkeypatch):
     import solver
     import board
 
-    board_hs = [['A', 'B'] + [''] * (utils.N - 2)] + [['' for _ in range(utils.N)] for _ in range(utils.N - 1)]
+    board_hs = [
+        ['W', 'E', 'B'] + [''] * (utils.N - 3),
+        ['I'] + [''] * (utils.N - 1),
+        ['D'] + [''] * (utils.N - 1),
+        ['E'] + [''] * (utils.N - 1),
+    ] + [['' for _ in range(utils.N)] for _ in range(utils.N - 4)]
     bonus_hs = [['' for _ in range(utils.N)] for _ in range(utils.N)]
     leaderboard_data = {
         "scores": [
             {
-                "score": 4,
+                "score": 8,
                 "gameState": {
                     "bonusTilePositions": {},
-                    "placedTiles": {"0-0": {"letter": "A"}, "0-1": {"letter": "B"}},
-                    "rack": ["C"]
+                    "placedTiles": {
+                        "0-0": {"letter": "W"}, "0-1": {"letter": "E"}, "0-2": {"letter": "B"},
+                        "1-0": {"letter": "I"}, "2-0": {"letter": "D"}, "3-0": {"letter": "E"}
+                    },
+                    "rack": ["X"]
                 },
             }
         ]
@@ -250,11 +258,9 @@ def test_improve_leaderboard(monkeypatch):
     monkeypatch.setattr(board, 'print_board', lambda *a, **k: None)
     monkeypatch.setattr(board, 'leaderboard_gamestate_to_board', lambda gs: (board_hs, bonus_hs))
 
-    captured = {}
+    captured = []
     def fake_pfb(b, r, w, ws, ob, **kwargs):
-        captured['board'] = [row[:] for row in b]
-        captured['bonus'] = ob
-        captured['rack'] = list(r)
+        captured.append({'board': [row[:] for row in b], 'bonus': ob, 'rack': list(r)})
         return 0, []
 
     monkeypatch.setattr(solver, 'parallel_first_beam', fake_pfb)
@@ -262,7 +268,10 @@ def test_improve_leaderboard(monkeypatch):
     monkeypatch.setattr(sys, 'argv', ['solver.py', '--improve-leaderboard', '--num-games', '1', '--beam-width', '1', '--depth', '1', '--no-cache'])
     solver.run_solver()
 
-    assert captured['bonus'] == bonus_hs
-    assert captured['board'][0][0] == ''
-    assert captured['board'][0][1] == ''
-    assert Counter(captured['rack']) == Counter(['A', 'B', 'C'])
+    first_call = captured[0]
+    assert first_call['bonus'] == bonus_hs
+    assert first_call['board'][0][0] == 'W'
+    assert first_call['board'][1][0] == 'I'
+    assert first_call['board'][0][1] == ''
+    assert first_call['board'][0][2] == ''
+    assert Counter(first_call['rack']) == Counter(['E', 'B', 'X'])
