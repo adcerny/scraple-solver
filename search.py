@@ -2,15 +2,15 @@ from collections import Counter
 import concurrent.futures
 import time
 from colorama import Fore, Style
-from utils import log_with_time, vlog, N, PRINT_LOCK, VERBOSE
+from utils import log_with_time, vlog, N, PRINT_LOCK, VERBOSE, Direction
 from board import board_valid, place_word, print_board
 from score_cache import cached_board_score, board_to_tuple
 
 def can_play_word_on_board(word, r0, c0, d, board, rack):
     rack = rack.copy()
     for i, ch in enumerate(word):
-        r = r0 + (i if d == 'V' else 0)
-        c = c0 + (i if d == 'H' else 0)
+        r = r0 + (i if d == Direction.DOWN else 0)
+        c = c0 + (i if d == Direction.ACROSS else 0)
         if not (len(board[r][c]) == 1):
             if rack[ch] > 0:
                 rack[ch] -= 1
@@ -20,7 +20,7 @@ def can_play_word_on_board(word, r0, c0, d, board, rack):
 
 def get_perpendicular_coords(temp, r, c, direction):
     coords = [(r, c)]
-    if direction == 'H':
+    if direction == Direction.ACROSS:
         i = r - 1
         while i >= 0 and len(temp[i][c]) == 1:
             coords.insert(0, (i, c))
@@ -47,8 +47,8 @@ def is_valid_placement(w, board, rack_count, wordset, r0, c0, d):
     needed = {}               # tile counts required from rack
 
     for i, ch in enumerate(w):
-        r = r0 + (i if d == 'V' else 0)
-        c = c0 + (i if d == 'H' else 0)
+        r = r0 + (i if d == Direction.DOWN else 0)
+        c = c0 + (i if d == Direction.ACROSS else 0)
         if r < 0 or r >= N or c < 0 or c >= N:
             return False
         cell = board[r][c]
@@ -69,7 +69,7 @@ def is_valid_placement(w, board, rack_count, wordset, r0, c0, d):
     for r, c, ch in placed:
         orig = board[r][c]
         board[r][c] = ch
-        if d == 'H':
+        if d == Direction.ACROSS:
             i = r
             while i > 0 and len(board[i-1][c]) == 1:
                 i -= 1
@@ -107,7 +107,7 @@ def prune_words(words, rack_count, board):
 def validate_new_words(board, wordset, w, r0, c0, d):
     # Check the main word
     main_word = []
-    if d == 'H':
+    if d == Direction.ACROSS:
         c_start = c0
         while c_start > 0 and len(board[r0][c_start-1]) == 1:
             c_start -= 1
@@ -127,12 +127,12 @@ def validate_new_words(board, wordset, w, r0, c0, d):
         return False
     # Check all perpendicular words formed by new tiles
     for i, ch in enumerate(w):
-        r = r0 + (i if d == 'V' else 0)
-        c = c0 + (i if d == 'H' else 0)
+        r = r0 + (i if d == Direction.DOWN else 0)
+        c = c0 + (i if d == Direction.ACROSS else 0)
         if len(board[r][c]) != 1:  # Only check for new tiles placed
             continue
         # Build perpendicular word
-        if d == 'H':
+        if d == Direction.ACROSS:
             r_start = r
             while r_start > 0 and len(board[r_start-1][c]) == 1:
                 r_start -= 1
@@ -174,33 +174,37 @@ def find_best(board, rack_count, words, wordset, touch=None, original_bonus=None
         L = len(w)
         for r in range(N):
             for c in range(N-L+1):
-                if not is_valid_placement(w, board, rack_count, wordset, r, c, 'H'): continue
+                if not is_valid_placement(w, board, rack_count, wordset, r, c, Direction.ACROSS):
+                    continue
                 coords = [(r, c+i) for i in range(L)]
                 if touch and not any((nr,nc) in touch or any(abs(nr-tr)+abs(nc-tc)==1 for tr,tc in touch) for nr,nc in coords): continue
                 board_copy = [row[:] for row in board]
                 rack_copy = rack_count.copy()
-                can_play, _ = can_play_word_on_board(w, r, c, 'H', board_copy, rack_copy)
+                can_play, _ = can_play_word_on_board(w, r, c, Direction.ACROSS, board_copy, rack_copy)
                 if not can_play: continue
-                place_word(board_copy, w, r, c, 'H')
-                if not validate_new_words(board_copy, wordset, w, r, c, 'H'): continue
+                place_word(board_copy, w, r, c, Direction.ACROSS)
+                if not validate_new_words(board_copy, wordset, w, r, c, Direction.ACROSS):
+                    continue
                 move_score = cached_board_score(board_to_tuple(board_copy), board_to_tuple(original_bonus))
                 bonus_count = sum(1 for i in range(L) if board[r][c+i] in {'DL','TL','DW','TW'})
-                candidates.append((move_score, bonus_count, L, w, 'H', r, c))
+                candidates.append((move_score, bonus_count, L, w, Direction.ACROSS, r, c))
                 checked += 1
         for r in range(N-L+1):
             for c in range(N):
-                if not is_valid_placement(w, board, rack_count, wordset, r, c, 'V'): continue
+                if not is_valid_placement(w, board, rack_count, wordset, r, c, Direction.DOWN):
+                    continue
                 coords = [(r+i, c) for i in range(L)]
                 if touch and not any((nr,nc) in touch or any(abs(nr-tr)+abs(nc-tc)==1 for tr,tc in touch) for nr,nc in coords): continue
                 board_copy = [row[:] for row in board]
                 rack_copy = rack_count.copy()
-                can_play, _ = can_play_word_on_board(w, r, c, 'V', board_copy, rack_copy)
+                can_play, _ = can_play_word_on_board(w, r, c, Direction.DOWN, board_copy, rack_copy)
                 if not can_play: continue
-                place_word(board_copy, w, r, c, 'V')
-                if not validate_new_words(board_copy, wordset, w, r, c, 'V'): continue
+                place_word(board_copy, w, r, c, Direction.DOWN)
+                if not validate_new_words(board_copy, wordset, w, r, c, Direction.DOWN):
+                    continue
                 move_score = cached_board_score(board_to_tuple(board_copy), board_to_tuple(original_bonus))
                 bonus_count = sum(1 for i in range(L) if board[r+i][c] in {'DL','TL','DW','TW'})
-                candidates.append((move_score, bonus_count, L, w, 'V', r, c))
+                candidates.append((move_score, bonus_count, L, w, Direction.DOWN, r, c))
                 checked += 1
     # Sort by move_score, then bonus_count, then word length (descending)
     candidates.sort(reverse=True)
@@ -404,7 +408,7 @@ def parallel_first_beam(board, rack, words, wordset, original_bonus, beam_width=
             msg_color = Fore.GREEN if status_msg else Fore.LIGHTBLUE_EX
             duration_msg = f" (duration: {elapsed:.3f}s)" if VERBOSE else ""
             log_with_time(
-                f"Game {idx+1}/{len(first_choices)}: {word} at ({row},{col}) {direction} → final score: {score}{duration_msg}{status_msg}",
+                f"Game {idx+1}/{len(first_choices)}: {word} at {row},{col},{direction.value} → final score: {score}{duration_msg}{status_msg}",
                 color=msg_color,
             )
             if print_board_flag:

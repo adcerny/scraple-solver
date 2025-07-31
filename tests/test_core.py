@@ -7,6 +7,7 @@ import io
 from board import get_letter_mask, place_word, compute_board_score, score_word, board_valid
 from score_cache import board_to_tuple, board_hash, cached_board_score
 import utils
+from utils import Direction
 import contextlib
 
 def pytest_configure():
@@ -21,7 +22,7 @@ def test_place_word_and_score():
     board = [['' for _ in range(5)] for _ in range(5)]
     bonus = [['' for _ in range(5)] for _ in range(5)]
     bonus[1][1] = 'DL'
-    place_word(board, 'CAT', 0, 0, 'H')
+    place_word(board, 'CAT', 0, 0, Direction.ACROSS)
     assert board[0][:3] == ['C', 'A', 'T']
     score = compute_board_score(board, bonus)
     # C=3, A=1, T=1, total=3+1+1=5 (no bonus used)
@@ -93,7 +94,7 @@ def test_empty_board_and_bonus():
     bonus = [['DL' if (r==c) else '' for c in range(5)] for r in range(5)]
     assert compute_board_score(board, bonus) == 0
     # Place a word on DL
-    place_word(board, 'DOG', 0, 0, 'H')
+    place_word(board, 'DOG', 0, 0, Direction.ACROSS)
     score = compute_board_score(board, bonus)
     # D=2*2, O=1, G=2, total=4+1+2=7
     assert score == 7
@@ -204,10 +205,10 @@ def test_print_board_output(monkeypatch):
 def test_place_word_vertical_and_oob():
     import board
     board_data = [['' for _ in range(5)] for _ in range(5)]
-    board.place_word(board_data, 'DOG', 0, 0, 'V')
+    board.place_word(board_data, 'DOG', 0, 0, Direction.DOWN)
     assert [board_data[i][0] for i in range(3)] == ['D', 'O', 'G']
     # Out of bounds should not raise, and only in-bounds letters placed
-    board.place_word(board_data, 'TOOLONGWORD', 0, 0, 'H')
+    board.place_word(board_data, 'TOOLONGWORD', 0, 0, Direction.ACROSS)
     # Only first 5 letters placed
     assert board_data[0][:5] == list('TOOLONGWORD')[:5]
 

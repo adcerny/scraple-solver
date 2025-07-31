@@ -31,7 +31,7 @@ def leaderboard_gamestate_to_board(game_state):
     return board, bonus_board
 
 from colorama import Fore, Style
-from utils import N, LETTER_SCORES, log_with_time, vlog, PRINT_LOCK
+from utils import N, LETTER_SCORES, log_with_time, vlog, PRINT_LOCK, Direction
 
 # Helper: precompute a mask of letter positions for a board
 # Returns a 2D list of bools: True if cell is a letter, else False
@@ -71,10 +71,11 @@ def print_board(board, bonus=None):
         print(flush=True)
 
 def place_word(board, w, r0, c0, d):
+    """Place ``w`` on ``board`` starting at ``r0,c0`` in direction ``d``."""
     N = len(board)
     for i, ch in enumerate(w):
-        r = r0 + (i if d == 'V' else 0)
-        c = c0 + (i if d == 'H' else 0)
+        r = r0 + (i if d == Direction.DOWN else 0)
+        c = c0 + (i if d == Direction.ACROSS else 0)
         if 0 <= r < N and 0 <= c < N:
             board[r][c] = ch
 
