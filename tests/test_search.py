@@ -1,7 +1,7 @@
 import pytest
 from search import explore_alternatives
 from board import board_valid
-from utils import N
+from utils import N, Direction
 from collections import Counter
 import random
 import string
@@ -18,7 +18,7 @@ def test_explore_alternatives():
     max_moves = 10
 
     # Mock play (score, word, direction, row, col)
-    play = (0, 'AB', 'H', 0, 0)
+    play = (0, 'AB', Direction.ACROSS, 0, 0)
 
     # Call the function
     score, board_result, moves = explore_alternatives(
@@ -45,7 +45,7 @@ def test_explore_alternatives_retries_invalid():
     max_moves = 10
 
     # First play is 'CD', which is not in wordset, so should be invalid
-    play_invalid = (0, 'CD', 'H', 0, 0)
+    play_invalid = (0, 'CD', Direction.ACROSS, 0, 0)
     score, board_result, moves = explore_alternatives(
         play_invalid, board, rack_count, pruned_words, wordset, original_bonus, beam_width, max_moves
     )
@@ -55,7 +55,7 @@ def test_explore_alternatives_retries_invalid():
     assert moves is None
 
     # Now try with a valid play
-    play_valid = (0, 'AB', 'H', 0, 0)
+    play_valid = (0, 'AB', Direction.ACROSS, 0, 0)
     score2, board_result2, moves2 = explore_alternatives(
         play_valid, board, rack_count, pruned_words, wordset, original_bonus, beam_width, max_moves
     )

@@ -25,7 +25,7 @@ import time
 import requests
 from collections import Counter
 import utils
-from utils import N, MAPPING, log_with_time, vlog, LETTER_SCORES
+from utils import N, MAPPING, log_with_time, vlog, LETTER_SCORES, Direction
 import os
 from colorama import Fore
 from board import print_board, compute_board_score
@@ -104,7 +104,7 @@ def run_solver():
                         help='After initial search, explore all subsequent moves for the best starting word. Optionally specify beam width (default: 1000)')
     parser.add_argument('--load-log', type=str, default=None, help='Path to a JSON log file to load the puzzle from instead of calling the API')
     parser.add_argument('--start-word', type=str, default=None, help='Specify a start word to force as the first move')
-    parser.add_argument('--start-pos', type=str, default=None, help='Specify position and direction for start word as "row,col,dir" (e.g. "7,7,H"). Only valid if --start-word is provided.')
+    parser.add_argument('--start-pos', type=str, default=None, help='Specify position and direction for start word as "row,col,dir" (e.g. "7,7,A"). Only valid if --start-word is provided.')
     parser.add_argument('--num-games', type=int, default=50, help='Number of games to play in parallel (default: 50)')
     args = parser.parse_args()
 
@@ -209,6 +209,7 @@ def run_solver():
                 row = int(row)
                 col = int(col)
                 dirn = dirn.upper()
+                dir_enum = Direction.ACROSS if dirn == Direction.ACROSS.value else Direction.DOWN
                 # Find all valid placements for the start word
                 valid_placements = find_best(
                     board,
@@ -222,14 +223,14 @@ def run_solver():
                 # Find placement matching user input
                 for p in valid_placements:
                     # p = (score, word, dir, row, col, ...)
-                    if p[2] == dirn and p[3] == row and p[4] == col:
+                    if p[2] == dir_enum and p[3] == row and p[4] == col:
                         placement = p
                         break
                 if not placement:
-                    log_with_time(f"Cannot place start word '{start_word}' at ({row},{col}) {dirn}.", color=Fore.RED)
+                    log_with_time(f"Cannot place start word '{start_word}' at {row},{col},{dirn}.", color=Fore.RED)
                     return
             except Exception as e:
-                log_with_time(f"Invalid --start-word-pos format. Use row,col,dir (e.g. 7,7,H). Error: {e}", color=Fore.RED)
+                log_with_time(f"Invalid --start-word-pos format. Use row,col,dir (e.g. 7,7,A). Error: {e}", color=Fore.RED)
                 return
         else:
             valid_placements = find_best(
@@ -245,7 +246,10 @@ def run_solver():
                 log_with_time(f"No valid placements for start word '{start_word}' on the board.", color=Fore.RED)
                 return
             placement = max(valid_placements, key=lambda x: x[0])
-        log_with_time(f"Best placement for '{start_word}': score {placement[0]}, position ({placement[3]},{placement[4]}) {placement[2]}", color=Fore.YELLOW)
+        log_with_time(
+            f"Best placement for '{start_word}': score {placement[0]}, position {placement[3]},{placement[4]},{placement[2].value}",
+            color=Fore.YELLOW,
+        )
         rack_after_first = rack_counter.copy()
         for ch in start_word:
             rack_after_first[ch] -= 1
@@ -265,7 +269,10 @@ def run_solver():
         log_with_time("Move sequence:", color=Fore.GREEN)
         for move in moves:
             sc, w, d, r0, c0 = move
-            log_with_time(f"  {w} at ({r0},{c0}) {d} scoring {sc}", color=Fore.GREEN)
+            log_with_time(
+                f"  {w} at {r0},{c0},{d.value} scoring {sc}",
+                color=Fore.GREEN,
+            )
         log_with_time("Final simulated board:", color=Fore.GREEN)
         print()
         print_board(board_after, original_bonus)
@@ -302,7 +309,10 @@ def run_solver():
         log_with_time("Move sequence:", color=Fore.GREEN)
         for move in best_moves:
             sc, w, d, r0, c0 = move
-            log_with_time(f"  {w} at ({r0},{c0}) {d} scoring {sc}", color=Fore.GREEN)
+            log_with_time(
+                f"  {w} at {r0},{c0},{d.value} scoring {sc}",
+                color=Fore.GREEN,
+            )
         log_with_time("Final simulated board:", color=Fore.GREEN)
         print()
         print_board(best_board, original_bonus)
@@ -326,7 +336,7 @@ def run_solver():
 
         if best_first_move:
             log_with_time(
-                f"High score deep dive starting from {best_first_move[1]} at ({best_first_move[3]},{best_first_move[4]}) {best_first_move[2]}",
+                f"High score deep dive starting from {best_first_move[1]} at {best_first_move[3]},{best_first_move[4]},{best_first_move[2].value}",
                 color=Fore.YELLOW,
             )
             rack_count = Counter(rack)
@@ -349,7 +359,7 @@ def run_solver():
                 for move in dive_moves:
                     sc, w, d, r0, c0 = move
                     log_with_time(
-                        f"  {w} at ({r0},{c0}) {d} scoring {sc}",
+                        f"  {w} at {r0},{c0},{d.value} scoring {sc}",
                         color=Fore.YELLOW,
                     )
                 log_with_time("Final board:", color=Fore.YELLOW)

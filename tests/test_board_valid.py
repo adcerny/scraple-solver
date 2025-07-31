@@ -4,13 +4,13 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 import pytest
 from board import board_valid
-from utils import N
+from utils import N, Direction
 
 def make_board(words, positions, direction):
     board = [['' for _ in range(N)] for _ in range(N)]
     for word, (r, c) in zip(words, positions):
         for i, ch in enumerate(word):
-            if direction == 'H':
+            if direction == Direction.ACROSS:
                 board[r][c + i] = ch
             else:
                 board[r + i][c] = ch
@@ -18,25 +18,25 @@ def make_board(words, positions, direction):
 
 
 def test_single_word_valid():
-    board = make_board(['CAT'], [(0, 0)], 'H')
+    board = make_board(['CAT'], [(0, 0)], Direction.ACROSS)
     wordset = {'CAT'}
     assert board_valid(board, wordset)
 
 
 def test_two_connected_words_valid():
-    board = make_board(['CAT', 'AT'], [(0, 0), (0, 1)], 'H')
+    board = make_board(['CAT', 'AT'], [(0, 0), (0, 1)], Direction.ACROSS)
     wordset = {'CAT', 'AT'}
     assert board_valid(board, wordset)
 
 
 def test_two_disconnected_words_invalid():
-    board = make_board(['CAT', 'DOG'], [(0, 0), (2, 0)], 'H')
+    board = make_board(['CAT', 'DOG'], [(0, 0), (2, 0)], Direction.ACROSS)
     wordset = {'CAT', 'DOG'}
     assert not board_valid(board, wordset)
 
 
 def test_word_not_in_wordset_invalid():
-    board = make_board(['CAT'], [(0, 0)], 'H')
+    board = make_board(['CAT'], [(0, 0)], Direction.ACROSS)
     wordset = {'DOG'}
     assert not board_valid(board, wordset)
 

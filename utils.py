@@ -4,11 +4,18 @@ import threading
 import json
 import os
 from colorama import Fore, Style, init
+from enum import Enum
 
 init()
 
 # Board dimension
 N = 5
+
+# Word placement directions
+class Direction(str, Enum):
+    """Possible directions for word placement."""
+    ACROSS = 'A'
+    DOWN = 'D'
 
 # Bonus-square codes
 MAPPING = {

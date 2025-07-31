@@ -12,6 +12,7 @@ import pytest
 
 import search
 import utils
+from utils import Direction
 from board import board_valid, compute_board_score
 
 def count_words(board):
@@ -76,9 +77,9 @@ def run_games(monkeypatch):
         if not getattr(stub_find_best, 'called', False):
             stub_find_best.called = True
             return [
-                (5, 'HI', 'V', 0, 0),
-                (2, 'IT', 'H', 1, 0),
-                (5, 'HI', 'H', 1, 0),
+                (5, 'HI', Direction.DOWN, 0, 0),
+                (2, 'IT', Direction.ACROSS, 1, 0),
+                (5, 'HI', Direction.ACROSS, 1, 0),
             ]
         return orig_find_best(board, rack_count, words, wordset, touch, original_bonus, top_k)
 
@@ -143,7 +144,7 @@ def test_start_pos_happy(monkeypatch, capsys):
     monkeypatch.setattr(sys, 'argv', [
         'solver.py',
         '--start-word', 'HI',
-        '--start-pos', '0,0,V',
+        '--start-pos', '0,0,D',
         '--depth', '2',
         '--beam-width', '2',
         '--num-games', '1',
@@ -156,7 +157,7 @@ def test_start_pos_happy(monkeypatch, capsys):
     out = capsys.readouterr().out
     assert "Best placement for 'HI':" in out
     assert "score" in out
-    assert "position (0,0) V" in out
+    assert "position 0,0,D" in out
 
 
 def test_start_pos_impossible(monkeypatch, capsys):
@@ -165,7 +166,7 @@ def test_start_pos_impossible(monkeypatch, capsys):
     monkeypatch.setattr(sys, 'argv', [
         'solver.py',
         '--start-word', 'HI',
-        '--start-pos', '5,5,H',
+        '--start-pos', '5,5,A',
         '--depth', '2',
         '--beam-width', '2',
         '--num-games', '1',
@@ -176,7 +177,7 @@ def test_start_pos_impossible(monkeypatch, capsys):
     monkeypatch.setattr(solver, 'print_board', lambda board, bonus=None: None)
     solver.run_solver()
     out = capsys.readouterr().out
-    assert "Cannot place start word 'HI' at (5,5) H." in out
+    assert "Cannot place start word 'HI' at 5,5,A." in out
 
 
 def test_start_pos_invalid_format(monkeypatch, capsys):
