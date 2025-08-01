@@ -421,6 +421,7 @@ def parallel_first_beam(board, rack, words, wordset, original_bonus, beam_width=
             vlog(f"beam_from_first {idx+1}", start)
 
     if not best_results:
-        return 0, []
+        return 0, [], []
 
-    return best_total, best_results
+    results_sorted = sorted(results, key=lambda x: x[0], reverse=True)
+    return best_total, best_results, results_sorted

@@ -95,7 +95,7 @@ def run_games(monkeypatch):
         utils.VERBOSE = False
         buf = io.StringIO()
         with redirect_stdout(buf):
-            best_score, best_results = search.parallel_first_beam(
+            best_score, best_results, _ = search.parallel_first_beam(
                 board,
                 rack,
                 words,
@@ -261,7 +261,7 @@ def test_improve_leaderboard(monkeypatch):
     captured = []
     def fake_pfb(b, r, w, ws, ob, **kwargs):
         captured.append({'board': [row[:] for row in b], 'bonus': ob, 'rack': list(r)})
-        return 0, []
+        return 0, [], []
 
     monkeypatch.setattr(solver, 'parallel_first_beam', fake_pfb)
 
@@ -275,3 +275,27 @@ def test_improve_leaderboard(monkeypatch):
     assert first_call['board'][0][1] == ''
     assert first_call['board'][0][2] == ''
     assert Counter(first_call['rack']) == Counter(['E', 'B', 'X'])
+
+
+def test_improve_top_n_called(monkeypatch):
+    import solver
+
+    monkeypatch.setattr(sys, 'argv', ['solver.py', '--num-games', '1', '--beam-width', '1', '--depth', '1', '--no-cache'])
+    monkeypatch.setattr(solver, 'fetch_board_and_rack', lambda: ([['' for _ in range(utils.N)] for _ in range(utils.N)], [], None))
+    monkeypatch.setattr(solver, 'load_dictionary', lambda: (['AB'], set(['AB']), ''))
+    monkeypatch.setattr(solver, 'print_board', lambda *a, **k: None)
+
+    calls = []
+
+    def fake_pfb(board, rack, w, ws, ob, **kwargs):
+        calls.append(kwargs.get('beam_width'))
+        if len(calls) == 1:
+            return 0, [(0, board, [])], [(0, board, [])]
+        return 1, [(1, board, [])], []
+
+    monkeypatch.setattr(solver, 'parallel_first_beam', fake_pfb)
+
+    solver.run_solver()
+
+    assert calls[0] == 1
+    assert calls[1] == 100

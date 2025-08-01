@@ -28,7 +28,7 @@ import utils
 from utils import N, MAPPING, log_with_time, vlog, LETTER_SCORES, Direction
 import os
 from colorama import Fore
-from board import print_board, compute_board_score, get_letter_mask, score_word
+from board import print_board, compute_board_score, get_letter_mask, score_word, place_word
 import time  # Ensure time is available in imported modules
 from functools import lru_cache
 from score_cache import board_to_tuple, cached_board_score
@@ -101,6 +101,20 @@ def remove_word_from_board(board, bonus, rack, positions, usage):
             board[r][c] = bonus[r][c] if bonus[r][c] else ''
             del usage[(r, c)]
 
+def rack_after_moves(start_board, start_rack, moves):
+    """Simulate moves on a board to determine remaining rack letters."""
+    board_copy = [row[:] for row in start_board]
+    rack_count = Counter(start_rack)
+    for _, word, d, r0, c0 in moves:
+        can_play, rack_count = search.can_play_word_on_board(word, r0, c0, d, board_copy, rack_count)
+        if not can_play:
+            break
+        place_word(board_copy, word, r0, c0, d)
+    remaining = []
+    for ch, cnt in rack_count.items():
+        remaining.extend([ch] * cnt)
+    return remaining
+
 def fetch_board_and_rack():
     resp = requests.get(API_URL)
     resp.raise_for_status()
@@ -161,12 +175,18 @@ def run_solver():
     parser.add_argument('--num-games', type=int, default=50, help='Number of games to play in parallel (default: 50)')
     parser.add_argument('--improve-leaderboard', action='store_true',
                         help='Start search from the current leaderboard high-score board')
+    parser.add_argument('--improve-top-n', type=int, default=5,
+                        help='Number of top-scoring games to retry for improvement (default: 5)')
+    parser.add_argument('--improve-top-beam-width', type=int, default=100,
+                        help='Beam width for improving top games (default: 100)')
     args = parser.parse_args()
 
     beam_width = args.beam_width
     first_moves = args.first_moves
     max_moves = args.depth
     num_games = args.num_games
+    improve_top_n = args.improve_top_n
+    improve_top_beam_width = args.improve_top_beam_width
 
     utils.start_time = time.time()
     utils.VERBOSE = args.verbose
@@ -281,7 +301,7 @@ def run_solver():
                 improved = False
                 for _, word_text, positions in words_on_board:
                     remove_word_from_board(board, original_bonus, rack, positions, usage)
-                    new_score, new_results = parallel_first_beam(
+                    new_score, new_results, _ = parallel_first_beam(
                         board,
                         rack,
                         words,
@@ -299,7 +319,7 @@ def run_solver():
                         improved = True
                         break
                 if not improved:
-                    best_total, best_results = parallel_first_beam(
+                    best_total, best_results, _ = parallel_first_beam(
                         board,
                         rack,
                         words,
@@ -407,7 +427,9 @@ def run_solver():
         return
 
     if not improvement_done:
-        best_total, best_results = parallel_first_beam(
+        board_before_games = [row[:] for row in board]
+        rack_before_games = list(rack)
+        best_total, best_results, all_results = parallel_first_beam(
             board,
             rack,
             words,
@@ -418,6 +440,49 @@ def run_solver():
             first_moves=first_moves,
             max_moves=max_moves,
         )
+        for score_candidate, board_candidate, moves_candidate in all_results[:improve_top_n]:
+            rack_candidate = rack_after_moves(board_before_games, rack_before_games, moves_candidate)
+            board_candidate_copy = [row[:] for row in board_candidate]
+            words_on_board = extract_words_with_scores(board_candidate_copy, original_bonus)
+            words_on_board.sort(key=lambda x: x[0])
+            usage = {}
+            for _, _, pos_list in words_on_board:
+                for pos in pos_list:
+                    usage[pos] = usage.get(pos, 0) + 1
+            improved = False
+            for _, w_txt, pos_list in words_on_board:
+                remove_word_from_board(board_candidate_copy, original_bonus, rack_candidate, pos_list, usage)
+                new_score, new_results, _ = parallel_first_beam(
+                    board_candidate_copy,
+                    rack_candidate,
+                    words,
+                    wordset,
+                    original_bonus,
+                    beam_width=improve_top_beam_width,
+                    num_games=num_games,
+                    first_moves=first_moves,
+                    max_moves=max_moves,
+                )
+                if new_score > best_total:
+                    best_total = new_score
+                    best_results = new_results
+                    improved = True
+                    break
+            if not improved:
+                new_score, new_results, _ = parallel_first_beam(
+                    board_candidate_copy,
+                    rack_candidate,
+                    words,
+                    wordset,
+                    original_bonus,
+                    beam_width=improve_top_beam_width,
+                    num_games=num_games,
+                    first_moves=first_moves,
+                    max_moves=max_moves,
+                )
+                if new_score > best_total:
+                    best_total = new_score
+                    best_results = new_results
 
     if not best_results:
         log_with_time("No valid full simulation found.")
