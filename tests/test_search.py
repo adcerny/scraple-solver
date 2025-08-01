@@ -136,7 +136,7 @@ def test_solver_runs_with_random_board_and_dictionary():
     original_bonus = [row[:] for row in board]
     # Run the solver with high beam width and games
     try:
-        best_total, best_results = parallel_first_beam(
+        best_total, best_results, all_results = parallel_first_beam(
             board,
             rack,
             words,
@@ -150,6 +150,7 @@ def test_solver_runs_with_random_board_and_dictionary():
         # Just check that it runs and returns results
         assert isinstance(best_total, (int, float))
         assert isinstance(best_results, list)
+        assert isinstance(all_results, list)
     except Exception as e:
         pytest.fail(f"Solver raised an exception: {e}")
 
