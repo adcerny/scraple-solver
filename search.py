@@ -4,13 +4,12 @@ import time
 from colorama import Fore, Style
 from utils import log_with_time, vlog, N, PRINT_LOCK, VERBOSE, Direction
 from board import board_valid, place_word, print_board
-from score_cache import cached_board_score, board_to_tuple
+from score_cache import cached_board_score, board_to_tuple, board_hash
 
-
-# ---- Heuristic weights (tweakable) ----
-ALPHA_PREMIUM = 0.5   # weight for premium_coverage
-BETA_MOBILITY = 0.2   # weight for future_mobility (anchors)
-GAMMA_DIVERSITY = 0.01  # penalty per repeat (row,col,dir) at a ply
+# ---- Default heuristic weights (can be overridden via params from solver) ----
+ALPHA_PREMIUM_DEFAULT = 0.5   # weight for premium_coverage
+BETA_MOBILITY_DEFAULT = 0.2   # weight for future_mobility (anchors)
+GAMMA_DIVERSITY_DEFAULT = 0.01  # penalty per repeat (row,col,dir) at a ply
 
 
 def can_play_word_on_board(word, r0, c0, d, board, rack, wordset=None, prefixset=None):
@@ -288,7 +287,6 @@ def count_future_mobility(board):
         for c in range(N):
             if len(board[r][c]) == 1:
                 continue
-            # empty cell? check neighbors for any letter
             if (
                 (r > 0 and len(board[r - 1][c]) == 1)
                 or (r + 1 < N and len(board[r + 1][c]) == 1)
@@ -308,14 +306,34 @@ def premium_coverage_from_move(board_before, board_after, original_bonus, w, r0,
         c = c0 + (i if d == Direction.ACROSS else 0)
         was_letter = len(board_before[r][c]) == 1
         is_letter = len(board_after[r][c]) == 1
-        if not was_letter and is_letter:
-            if original_bonus[r][c] in {"DL", "TL", "DW", "TW"}:
-                covered += 1
+        if not was_letter and is_letter and original_bonus[r][c] in {"DL", "TL", "DW", "TW"}:
+            covered += 1
     return covered
 
 
-def full_beam_search(board, rack_count, words, wordset, prefixset, placed, original_bonus, beam_width=5, max_moves=20):
-    """Perform a beam search over the board with multi-objective priority and diversity."""
+def _rack_key(rack_counter):
+    """Stable, compact key for a rack Counter."""
+    # Sort by letter for canonical order
+    return tuple(sorted((ch, n) for ch, n in rack_counter.items() if n > 0))
+
+
+def full_beam_search(
+    board,
+    rack_count,
+    words,
+    wordset,
+    prefixset,
+    placed,
+    original_bonus,
+    beam_width=5,
+    max_moves=20,
+    alpha_premium=ALPHA_PREMIUM_DEFAULT,
+    beta_mobility=BETA_MOBILITY_DEFAULT,
+    gamma_diversity=GAMMA_DIVERSITY_DEFAULT,
+    use_transpo=False,
+    transpo_cap=200000,
+):
+    """Beam search with multi-objective priority, diversity, and optional transposition pruning."""
     # state entries: (priority_score, current_score, board, rack_count, placed_set, moves_list, remaining_words)
     init_score = cached_board_score(board_to_tuple(board), board_to_tuple(original_bonus)) if words else 0
     state = [(init_score, init_score, board, rack_count, set(placed), [], words)]
@@ -323,6 +341,9 @@ def full_beam_search(board, rack_count, words, wordset, prefixset, placed, origi
     best_board = None
     best_moves = None
     move_num = 1
+
+    # transposition table: (board_hash, rack_key, depth) -> best_score
+    transpo = {} if use_transpo else None
 
     if not words:
         if board_valid(board, wordset):
@@ -357,17 +378,33 @@ def full_beam_search(board, rack_count, words, wordset, prefixset, placed, origi
                 if not validate_new_words(b2, wordset, w, r0, c0, d):
                     continue
 
+                # Optional transposition prune
+                if use_transpo:
+                    h = board_hash(board_to_tuple(b2), board_to_tuple(original_bonus))
+                    rk = _rack_key(rack_after)
+                    key = (h, rk, move_num)
+                    new_score = cached_board_score(board_to_tuple(b2), board_to_tuple(original_bonus))
+                    prev = transpo.get(key)
+                    if prev is not None and prev >= new_score:
+                        continue  # dominated
+                    transpo[key] = new_score
+                    # size cap (simple trim)
+                    if len(transpo) > transpo_cap:
+                        # drop ~1% oldest-ish items (not true LRU, but cheap)
+                        for _ in range(max(1, transpo_cap // 100)):
+                            transpo.pop(next(iter(transpo)))
+
                 # Compute features
                 new_score = cached_board_score(board_to_tuple(b2), board_to_tuple(original_bonus))
                 prem = premium_coverage_from_move(b, b2, original_bonus, w, r0, c0, d)
                 mob = count_future_mobility(b2)
 
                 # Diversity penalty: penalize repeated (row,col,dir) at this depth
-                key = (r0, c0, d)
-                penalty = GAMMA_DIVERSITY * repeat_counts[key]
-                repeat_counts[key] += 1
+                key_div = (r0, c0, d)
+                penalty = gamma_diversity * repeat_counts[key_div]
+                repeat_counts[key_div] += 1
 
-                priority = new_score + ALPHA_PREMIUM * prem + BETA_MOBILITY * mob - penalty
+                priority = new_score + alpha_premium * prem + beta_mobility * mob - penalty
 
                 pl2 = {(r, c) for r in range(N) for c in range(N) if len(b2[r][c]) == 1}
                 next_words = rem_words.copy()
@@ -407,7 +444,22 @@ def full_beam_search(board, rack_count, words, wordset, prefixset, placed, origi
     return best_score, best_board, best_moves
 
 
-def beam_from_first(play, board, rack_count, words, wordset, original_bonus, beam_width, max_moves=20, prefixset=None):
+def beam_from_first(
+    play,
+    board,
+    rack_count,
+    words,
+    wordset,
+    original_bonus,
+    beam_width,
+    max_moves=20,
+    prefixset=None,
+    alpha_premium=ALPHA_PREMIUM_DEFAULT,
+    beta_mobility=BETA_MOBILITY_DEFAULT,
+    gamma_diversity=GAMMA_DIVERSITY_DEFAULT,
+    use_transpo=False,
+    transpo_cap=200000,
+):
     """Run a beam search after making an initial play."""
     play_word = play[1]
     words_for_sim = [w for w in words if w != play_word]
@@ -430,14 +482,47 @@ def beam_from_first(play, board, rack_count, words, wordset, original_bonus, bea
         original_bonus,
         beam_width=beam_width,
         max_moves=max_moves,
+        alpha_premium=alpha_premium,
+        beta_mobility=beta_mobility,
+        gamma_diversity=gamma_diversity,
+        use_transpo=use_transpo,
+        transpo_cap=transpo_cap,
     )
     return (score, final_board, [(play[0], play_word, play[2], play[3], play[4])] + (moves if moves else []))
 
 
-def explore_alternatives(play, board, rack_count, pruned_words, wordset, original_bonus, beam_width, max_moves, prefixset=None):
+def explore_alternatives(
+    play,
+    board,
+    rack_count,
+    pruned_words,
+    wordset,
+    original_bonus,
+    beam_width,
+    max_moves,
+    prefixset=None,
+    alpha_premium=ALPHA_PREMIUM_DEFAULT,
+    beta_mobility=BETA_MOBILITY_DEFAULT,
+    gamma_diversity=GAMMA_DIVERSITY_DEFAULT,
+    use_transpo=False,
+    transpo_cap=200000,
+):
     """Helper function to explore alternative moves for a given start word."""
     score, board_result, moves = beam_from_first(
-        play, board, rack_count, pruned_words, wordset, original_bonus, beam_width, max_moves, prefixset
+        play,
+        board,
+        rack_count,
+        pruned_words,
+        wordset,
+        original_bonus,
+        beam_width,
+        max_moves,
+        prefixset,
+        alpha_premium,
+        beta_mobility,
+        gamma_diversity,
+        use_transpo,
+        transpo_cap,
     )
     if board_result and board_valid(board_result, wordset):
         return score, board_result, moves
@@ -445,7 +530,21 @@ def explore_alternatives(play, board, rack_count, pruned_words, wordset, origina
 
 
 def parallel_first_beam(
-    board, rack, words, wordset, original_bonus, beam_width=5, num_games=100, first_moves=None, max_moves=20, prefixset=None
+    board,
+    rack,
+    words,
+    wordset,
+    original_bonus,
+    beam_width=5,
+    num_games=100,
+    first_moves=None,
+    max_moves=20,
+    prefixset=None,
+    alpha_premium=ALPHA_PREMIUM_DEFAULT,
+    beta_mobility=BETA_MOBILITY_DEFAULT,
+    gamma_diversity=GAMMA_DIVERSITY_DEFAULT,
+    use_transpo=False,
+    transpo_cap=200000,
 ):
     """Search game states starting from multiple first moves in parallel."""
     rack_count = Counter(rack)
@@ -487,6 +586,11 @@ def parallel_first_beam(
                 beam_width,
                 max_moves,
                 prefixset,
+                alpha_premium,
+                beta_mobility,
+                gamma_diversity,
+                use_transpo,
+                transpo_cap,
             ): (time.time(), play, i)
             for i, play in enumerate(first_choices)
         }

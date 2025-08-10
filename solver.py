@@ -12,7 +12,7 @@ import json
 from datetime import datetime
 import concurrent.futures
 
-from search import parallel_first_beam
+from search import parallel_first_beam, beam_from_first
 
 
 API_URL = "https://scraple.io/api/daily-puzzle"
@@ -168,6 +168,16 @@ def run_solver():
     parser.add_argument("--depth", type=int, default=20, help="Maximum number of moves to search (default: 20)")
     parser.add_argument("--verbose", action="store_true", help="Enable verbose logging")
     parser.add_argument("--no-cache", action="store_true", help="Disable board score caching")
+
+    # NEW: heuristic weight knobs
+    parser.add_argument("--alpha-premium", type=float, default=0.5, help="Weight for premium coverage (default: 0.5)")
+    parser.add_argument("--beta-mobility", type=float, default=0.2, help="Weight for mobility/anchors (default: 0.2)")
+    parser.add_argument("--gamma-diversity", type=float, default=0.01, help="Penalty per repeated (row,col,dir) at a ply (default: 0.01)")
+
+    # NEW: transposition table controls
+    parser.add_argument("--use-transpo", action="store_true", help="Enable transposition pruning (off by default)")
+    parser.add_argument("--transpo-cap", type=int, default=200000, help="Maximum entries in the transposition table (default: 200000)")
+
     parser.add_argument("--log-puzzle", action="store_true", help="Save the day's puzzle and best result to a JSON log file")
     parser.add_argument(
         "--high-score-deep-dive",
@@ -192,6 +202,13 @@ def run_solver():
     first_moves = args.first_moves
     max_moves = args.depth
     num_games = args.num_games
+
+    # Heuristic weights & transpo opts
+    alpha_premium = args.alpha_premium
+    beta_mobility = args.beta_mobility
+    gamma_diversity = args.gamma_diversity
+    use_transpo = args.use_transpo
+    transpo_cap = args.transpo_cap
 
     utils.start_time = time.time()
     utils.VERBOSE = args.verbose
@@ -223,14 +240,14 @@ def run_solver():
         leaderboard_data = None
         words, wordset, prefixset = load_dictionary()[:3]
     else:
- # Fetch the board, dictionary, and leaderboard in parallel
+        # Fetch the board, dictionary, and leaderboard in parallel
         with concurrent.futures.ThreadPoolExecutor() as executor:
             future_board = executor.submit(fetch_board_and_rack)
             future_dict = executor.submit(load_dictionary)
             future_leaderboard = executor.submit(lambda: requests.get(LEADERBOARD_URL, timeout=10))
             board, rack, board_api_data = future_board.result()
 
-            # Tolerant unpack: accept 4-tuple or legacy 3-tuple from tests
+            # Accept 4-tuple or tolerant 3-tuple from tests/mocks
             dict_result = future_dict.result()
             if isinstance(dict_result, tuple) and len(dict_result) == 4:
                 words, wordset, prefixset, dict_text = dict_result
@@ -240,12 +257,9 @@ def run_solver():
                     prefixset = third
                     dict_text = ""
                 else:
-                    # third is dict_text (e.g., tests pass "")
                     dict_text = third
-                    # build prefixes so downstream code gets a real set
                     prefixset = _build_prefix_set(words)
             else:
-                # Fallback: minimal safety net
                 words = dict_result[0]
                 wordset = dict_result[1]
                 dict_text = dict_result[3] if len(dict_result) > 3 else ""
@@ -341,12 +355,16 @@ def run_solver():
                         first_moves=first_moves,
                         max_moves=max_moves,
                         prefixset=prefixset,
+                        alpha_premium=alpha_premium,
+                        beta_mobility=beta_mobility,
+                        gamma_diversity=gamma_diversity,
+                        use_transpo=use_transpo,
+                        transpo_cap=transpo_cap,
                     )
-                    improvement_done = True
-                    if new_score > high_score:
+                    improved = True if new_score > high_score else improved
+                    if improved:
                         best_total = new_score
                         best_results = new_results
-                        improved = True
                         break
                 if not improved:
                     best_total, best_results = parallel_first_beam(
@@ -360,6 +378,11 @@ def run_solver():
                         first_moves=first_moves,
                         max_moves=max_moves,
                         prefixset=prefixset,
+                        alpha_premium=alpha_premium,
+                        beta_mobility=beta_mobility,
+                        gamma_diversity=gamma_diversity,
+                        use_transpo=use_transpo,
+                        transpo_cap=transpo_cap,
                     )
                     improvement_done = True
 
@@ -372,7 +395,7 @@ def run_solver():
         if any(word_counter[ch] > rack_counter.get(ch, 0) for ch in word_counter):
             log_with_time(f"Cannot form start word '{start_word}' from rack: {' '.join(rack)}", color=Fore.RED)
             return
-        from search import find_best, beam_from_first, prune_words
+        from search import find_best, prune_words  # beam_from_first already imported above
 
         pruned_words = prune_words(words, rack_counter, board)
         log_with_time(f"Pruned word list: {len(pruned_words)} words", color=Fore.CYAN)
@@ -435,6 +458,11 @@ def run_solver():
             beam_width=beam_width,
             max_moves=max_moves,
             prefixset=prefixset,
+            alpha_premium=alpha_premium,
+            beta_mobility=beta_mobility,
+            gamma_diversity=gamma_diversity,
+            use_transpo=use_transpo,
+            transpo_cap=transpo_cap,
         )
         log_with_time(f"Best result with start word '{start_word}': {score}", color=Fore.GREEN)
         log_with_time("Move sequence:", color=Fore.GREEN)
@@ -462,6 +490,11 @@ def run_solver():
             first_moves=first_moves,
             max_moves=max_moves,
             prefixset=prefixset,
+            alpha_premium=alpha_premium,
+            beta_mobility=beta_mobility,
+            gamma_diversity=gamma_diversity,
+            use_transpo=use_transpo,
+            transpo_cap=transpo_cap,
         )
 
     if not best_results:
