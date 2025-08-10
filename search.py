@@ -1,10 +1,16 @@
-from collections import Counter
+from collections import Counter, defaultdict
 import concurrent.futures
 import time
 from colorama import Fore, Style
 from utils import log_with_time, vlog, N, PRINT_LOCK, VERBOSE, Direction
 from board import board_valid, place_word, print_board
 from score_cache import cached_board_score, board_to_tuple
+
+
+# ---- Heuristic weights (tweakable) ----
+ALPHA_PREMIUM = 0.5   # weight for premium_coverage
+BETA_MOBILITY = 0.2   # weight for future_mobility (anchors)
+GAMMA_DIVERSITY = 0.01  # penalty per repeat (row,col,dir) at a ply
 
 
 def can_play_word_on_board(word, r0, c0, d, board, rack, wordset=None, prefixset=None):
@@ -274,9 +280,45 @@ def find_best(board, rack_count, words, wordset, prefixset=None, touch=None, ori
     return [(sc, w, d, r, c) for sc, _, _, w, d, r, c in selected]
 
 
+# ---- Mobility & premium coverage utilities ----
+def count_future_mobility(board):
+    """Number of empty cells orthogonally adjacent to at least one letter."""
+    anchors = 0
+    for r in range(N):
+        for c in range(N):
+            if len(board[r][c]) == 1:
+                continue
+            # empty cell? check neighbors for any letter
+            if (
+                (r > 0 and len(board[r - 1][c]) == 1)
+                or (r + 1 < N and len(board[r + 1][c]) == 1)
+                or (c > 0 and len(board[r][c - 1]) == 1)
+                or (c + 1 < N and len(board[r][c + 1]) == 1)
+            ):
+                anchors += 1
+    return anchors
+
+
+def premium_coverage_from_move(board_before, board_after, original_bonus, w, r0, c0, d):
+    """Count how many premium cells (DL/TL/DW/TW) were newly covered by *new* tiles of this move."""
+    covered = 0
+    L = len(w)
+    for i in range(L):
+        r = r0 + (i if d == Direction.DOWN else 0)
+        c = c0 + (i if d == Direction.ACROSS else 0)
+        was_letter = len(board_before[r][c]) == 1
+        is_letter = len(board_after[r][c]) == 1
+        if not was_letter and is_letter:
+            if original_bonus[r][c] in {"DL", "TL", "DW", "TW"}:
+                covered += 1
+    return covered
+
+
 def full_beam_search(board, rack_count, words, wordset, prefixset, placed, original_bonus, beam_width=5, max_moves=20):
-    """Perform a beam search over the board."""
-    state = [(0, board, rack_count, set(placed), [], words)]
+    """Perform a beam search over the board with multi-objective priority and diversity."""
+    # state entries: (priority_score, current_score, board, rack_count, placed_set, moves_list, remaining_words)
+    init_score = cached_board_score(board_to_tuple(board), board_to_tuple(original_bonus)) if words else 0
+    state = [(init_score, init_score, board, rack_count, set(placed), [], words)]
     best_score = 0
     best_board = None
     best_moves = None
@@ -284,13 +326,16 @@ def full_beam_search(board, rack_count, words, wordset, prefixset, placed, origi
 
     if not words:
         if board_valid(board, wordset):
-            best_score = cached_board_score(board_to_tuple(board), board_to_tuple(original_bonus))
+            best_score = init_score
             return best_score, board, []
 
     while state and move_num <= max_moves:
         t0 = time.time()
         next_state = []
-        for score, b, rc, pl, moves, rem_words in state:
+        # diversity tracking for this ply
+        repeat_counts = defaultdict(int)
+
+        for _, cur_score, b, rc, pl, moves, rem_words in state:
             touch = None if not moves else pl
             pruned_words = prune_words(rem_words, rc, b)
             candidates = find_best(
@@ -311,6 +356,19 @@ def full_beam_search(board, rack_count, words, wordset, prefixset, placed, origi
                 place_word(b2, w, r0, c0, d)
                 if not validate_new_words(b2, wordset, w, r0, c0, d):
                     continue
+
+                # Compute features
+                new_score = cached_board_score(board_to_tuple(b2), board_to_tuple(original_bonus))
+                prem = premium_coverage_from_move(b, b2, original_bonus, w, r0, c0, d)
+                mob = count_future_mobility(b2)
+
+                # Diversity penalty: penalize repeated (row,col,dir) at this depth
+                key = (r0, c0, d)
+                penalty = GAMMA_DIVERSITY * repeat_counts[key]
+                repeat_counts[key] += 1
+
+                priority = new_score + ALPHA_PREMIUM * prem + BETA_MOBILITY * mob - penalty
+
                 pl2 = {(r, c) for r in range(N) for c in range(N) if len(b2[r][c]) == 1}
                 next_words = rem_words.copy()
                 try:
@@ -318,9 +376,11 @@ def full_beam_search(board, rack_count, words, wordset, prefixset, placed, origi
                         next_words.remove(w)
                 except ValueError:
                     pass
+
                 next_state.append(
                     (
-                        cached_board_score(board_to_tuple(b2), board_to_tuple(original_bonus)),
+                        priority,
+                        new_score,
                         b2,
                         rack_after,
                         pl2,
@@ -328,15 +388,22 @@ def full_beam_search(board, rack_count, words, wordset, prefixset, placed, origi
                         next_words,
                     )
                 )
+
         vlog(f"full_beam_search move {move_num}: {len(state)} states expanded to {len(next_state)}", t0)
-        state = sorted(next_state, key=lambda x: x[0], reverse=True)
+        # Sort by priority (desc), keep top beam_width states
+        next_state.sort(key=lambda x: x[0], reverse=True)
         if beam_width is not None:
-            state = state[:beam_width]
-        if state and state[0][0] > best_score:
-            best_score = state[0][0]
-            best_board = state[0][1]
-            best_moves = state[0][4]
+            next_state = next_state[:beam_width]
+        state = next_state
+
+        # Track best by *true* score (not the heuristic priority)
+        if state and state[0][1] > best_score:
+            best_score = state[0][1]
+            best_board = state[0][2]
+            best_moves = state[0][5]
+
         move_num += 1
+
     return best_score, best_board, best_moves
 
 
