@@ -2,40 +2,65 @@ from board import compute_board_score
 import hashlib
 import utils
 
-
 _seen_hashes = {}
 _actual_hits = 0
 _actual_misses = 0
 CACHE_DISABLED = False
 
+# Simple cap to avoid unbounded growth
+MAX_CACHE_SIZE = 50000
+
+
 def board_to_tuple(board):
     return tuple(tuple(row) for row in board)
+
 
 def board_hash(board_tuple, bonus_tuple):
     s = str(board_tuple) + str(bonus_tuple)
     return hashlib.md5(s.encode()).hexdigest()[:8]
 
-def cached_board_score(board_tuple, bonus_tuple):
+
+def cached_board_score(board_tuple, bonus_tuple, cache=None):
+    """Compute or retrieve a cached board score.
+
+    Uses a compact hash key to reduce key size and enables a simple size cap
+    to avoid unbounded memory growth. When CACHE_DISABLED is True, always
+    recomputes without touching cache counters.
+    """
     global _actual_hits, _actual_misses
+
     if CACHE_DISABLED:
-        # Always recompute, do not use or update cache or hit/miss counts
         return compute_board_score(board_tuple, bonus_tuple)
+
+    # Verbose hash tracking for diagnostics
     if utils.VERBOSE:
         h = board_hash(board_tuple, bonus_tuple)
         count = _seen_hashes.get(h, 0)
         _seen_hashes[h] = count + 1
-    if not hasattr(cached_board_score, 'cache'):
-        cached_board_score.cache = {}
-    cache = cached_board_score.cache
-    key = (board_tuple, bonus_tuple)
+
+    if cache is None:
+        cache = getattr(cached_board_score, "_cache", None)
+        if cache is None:
+            cache = {}
+            cached_board_score._cache = cache
+
+    key = board_hash(board_tuple, bonus_tuple)
     if key in cache:
         _actual_hits += 1
         return cache[key]
-    else:
-        _actual_misses += 1
-        val = compute_board_score(board_tuple, bonus_tuple)
-        cache[key] = val
-        return val
+
+    _actual_misses += 1
+    val = compute_board_score(board_tuple, bonus_tuple)
+    cache[key] = val
+
+    # Simple trim. Replace with OrderedDict for true LRU if desired.
+    if len(cache) > MAX_CACHE_SIZE:
+        to_trim = len(cache) - MAX_CACHE_SIZE
+        for _ in range(to_trim):
+            cache.pop(next(iter(cache)))
+
+    return val
+
 
 def print_cache_summary():
     print(f"[CACHE SUMMARY] Unique board+bonus hashes: {len(_seen_hashes)}")

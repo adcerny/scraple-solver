@@ -179,9 +179,10 @@ def test_solver_runs_with_random_start_word():
             rack_counter,
             [start_word],
             wordset,
-            None,
-            original_bonus,
-            top_k=None
+            prefixset=None,
+            touch=None,
+            original_bonus=original_bonus,
+            top_k=None,
         )
         if valid_placements:
             best_placement = max(valid_placements, key=lambda x: x[0])
