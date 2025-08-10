@@ -250,7 +250,16 @@ def test_search_prune_words_and_find_best():
     # find_best basic test
     wordset = set(words)
     bonus = [['' for _ in range(5)] for _ in range(5)]
-    results = search.find_best(board, rack_count, pruned, wordset, None, bonus, top_k=2)
+    results = search.find_best(
+        board,
+        rack_count,
+        pruned,
+        wordset,
+        prefixset=None,
+        touch=None,
+        original_bonus=bonus,
+        top_k=2,
+    )
     assert isinstance(results, list)
 
 def test_log_puzzle_to_file_in_memory(monkeypatch):

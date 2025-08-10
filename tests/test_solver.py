@@ -73,7 +73,16 @@ def run_games(monkeypatch):
 
     orig_find_best = search.find_best
 
-    def stub_find_best(board, rack_count, words, wordset, touch=None, original_bonus=None, top_k=10):
+    def stub_find_best(
+        board,
+        rack_count,
+        words,
+        wordset,
+        prefixset=None,
+        touch=None,
+        original_bonus=None,
+        top_k=10,
+    ):
         if not getattr(stub_find_best, 'called', False):
             stub_find_best.called = True
             return [
@@ -81,7 +90,16 @@ def run_games(monkeypatch):
                 (2, 'IT', Direction.ACROSS, 1, 0),
                 (5, 'HI', Direction.ACROSS, 1, 0),
             ]
-        return orig_find_best(board, rack_count, words, wordset, touch, original_bonus, top_k)
+        return orig_find_best(
+            board,
+            rack_count,
+            words,
+            wordset,
+            prefixset,
+            touch,
+           original_bonus,
+            top_k,
+        )
 
     monkeypatch.setattr(search, 'find_best', stub_find_best)
 
@@ -151,7 +169,8 @@ def test_start_pos_happy(monkeypatch, capsys):
         '--no-cache',
     ])
     monkeypatch.setattr(solver, 'fetch_board_and_rack', lambda: ([['' for _ in range(utils.N)] for _ in range(utils.N)], ['H', 'I', 'I', 'T'], None))
-    monkeypatch.setattr(solver, 'load_dictionary', lambda: (['HI', 'IT'], set(['HI', 'IT']), ''))
+    # Canonical 4-tuple: (words, wordset, prefixset, dict_text)
+    monkeypatch.setattr(solver, 'load_dictionary', lambda: (['HI', 'IT'], set(['HI', 'IT']), set(['H', 'I']), ''))
     monkeypatch.setattr(solver, 'print_board', lambda board, bonus=None: None)
     solver.run_solver()
     out = capsys.readouterr().out
@@ -173,7 +192,8 @@ def test_start_pos_impossible(monkeypatch, capsys):
         '--no-cache',
     ])
     monkeypatch.setattr(solver, 'fetch_board_and_rack', lambda: ([['' for _ in range(utils.N)] for _ in range(utils.N)], ['H', 'I', 'I', 'T'], None))
-    monkeypatch.setattr(solver, 'load_dictionary', lambda: (['HI', 'IT'], set(['HI', 'IT']), ''))
+    # Canonical 4-tuple
+    monkeypatch.setattr(solver, 'load_dictionary', lambda: (['HI', 'IT'], set(['HI', 'IT']), set(['H', 'I']), ''))
     monkeypatch.setattr(solver, 'print_board', lambda board, bonus=None: None)
     solver.run_solver()
     out = capsys.readouterr().out
@@ -193,7 +213,8 @@ def test_start_pos_invalid_format(monkeypatch, capsys):
         '--no-cache',
     ])
     monkeypatch.setattr(solver, 'fetch_board_and_rack', lambda: ([['' for _ in range(utils.N)] for _ in range(utils.N)], ['H', 'I', 'I', 'T'], None))
-    monkeypatch.setattr(solver, 'load_dictionary', lambda: (['HI', 'IT'], set(['HI', 'IT']), ''))
+    # Canonical 4-tuple
+    monkeypatch.setattr(solver, 'load_dictionary', lambda: (['HI', 'IT'], set(['HI', 'IT']), set(['H', 'I']), ''))
     monkeypatch.setattr(solver, 'print_board', lambda board, bonus=None: None)
     solver.run_solver()
     out = capsys.readouterr().out
@@ -253,7 +274,8 @@ def test_improve_leaderboard(monkeypatch):
 
     monkeypatch.setattr(solver.requests, 'get', fake_requests_get)
     monkeypatch.setattr(solver, 'fetch_board_and_rack', lambda: ([['' for _ in range(utils.N)] for _ in range(utils.N)], [], None))
-    monkeypatch.setattr(solver, 'load_dictionary', lambda: (['AB'], set(['AB']), ''))
+    # Canonical 4-tuple
+    monkeypatch.setattr(solver, 'load_dictionary', lambda: (['AB'], set(['AB']), set(['A']), ''))
     monkeypatch.setattr(solver, 'print_board', lambda *a, **k: None)
     monkeypatch.setattr(board, 'print_board', lambda *a, **k: None)
     monkeypatch.setattr(board, 'leaderboard_gamestate_to_board', lambda gs: (board_hs, bonus_hs))
