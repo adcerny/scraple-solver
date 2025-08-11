@@ -12,12 +12,19 @@ import json
 from datetime import datetime
 import concurrent.futures
 
-from search import parallel_first_beam, beam_from_first, find_best, prune_words
+from search import parallel_first_beam, beam_from_first
 
 
 API_URL = "https://scraple.io/api/daily-puzzle"
 DICT_URL = "https://scraple.io/dictionary.txt"
 LEADERBOARD_URL = "https://scraple.io/api/leaderboard"
+
+# Fixed search knobs (kept simple, no CLI switches)
+ALPHA_PREMIUM = 0.5
+BETA_MOBILITY = 0.2
+GAMMA_DIVERSITY = 0.01
+USE_TRANSPO = True          # <— always ON now
+TRANSPO_CAP = 200_000
 
 
 def _build_prefix_set(words):
@@ -168,7 +175,6 @@ def run_solver():
     parser.add_argument("--depth", type=int, default=20, help="Maximum number of moves to search (default: 20)")
     parser.add_argument("--verbose", action="store_true", help="Enable verbose logging")
     parser.add_argument("--no-cache", action="store_true", help="Disable board score caching")
-
     parser.add_argument("--log-puzzle", action="store_true", help="Save the day's puzzle and best result to a JSON log file")
     parser.add_argument(
         "--high-score-deep-dive",
@@ -193,6 +199,13 @@ def run_solver():
     first_moves = args.first_moves
     max_moves = args.depth
     num_games = args.num_games
+
+    # Fixed heuristics & transpo (no CLI toggles)
+    alpha_premium = ALPHA_PREMIUM
+    beta_mobility = BETA_MOBILITY
+    gamma_diversity = GAMMA_DIVERSITY
+    use_transpo = USE_TRANSPO
+    transpo_cap = TRANSPO_CAP
 
     utils.start_time = time.time()
     utils.VERBOSE = args.verbose
@@ -339,6 +352,11 @@ def run_solver():
                         first_moves=first_moves,
                         max_moves=max_moves,
                         prefixset=prefixset,
+                        alpha_premium=alpha_premium,
+                        beta_mobility=beta_mobility,
+                        gamma_diversity=gamma_diversity,
+                        use_transpo=use_transpo,
+                        transpo_cap=transpo_cap,
                     )
                     improved = True if new_score > high_score else improved
                     if improved:
@@ -357,6 +375,11 @@ def run_solver():
                         first_moves=first_moves,
                         max_moves=max_moves,
                         prefixset=prefixset,
+                        alpha_premium=alpha_premium,
+                        beta_mobility=beta_mobility,
+                        gamma_diversity=gamma_diversity,
+                        use_transpo=use_transpo,
+                        transpo_cap=transpo_cap,
                     )
                     improvement_done = True
 
@@ -369,6 +392,7 @@ def run_solver():
         if any(word_counter[ch] > rack_counter.get(ch, 0) for ch in word_counter):
             log_with_time(f"Cannot form start word '{start_word}' from rack: {' '.join(rack)}", color=Fore.RED)
             return
+        from search import find_best, prune_words  # beam_from_first already imported above
 
         pruned_words = prune_words(words, rack_counter, board)
         log_with_time(f"Pruned word list: {len(pruned_words)} words", color=Fore.CYAN)
@@ -386,7 +410,7 @@ def run_solver():
                     rack_counter,
                     [start_word],
                     wordset,
-                    _build_prefix_set([start_word]),
+                    prefixset,
                     None,
                     original_bonus,
                     top_k=None,
@@ -407,7 +431,7 @@ def run_solver():
                 rack_counter,
                 [start_word],
                 wordset,
-                _build_prefix_set([start_word]),
+                prefixset,
                 None,
                 original_bonus,
                 top_k=None,
@@ -430,7 +454,12 @@ def run_solver():
             original_bonus,
             beam_width=beam_width,
             max_moves=max_moves,
-            prefixset=_build_prefix_set([start_word]),
+            prefixset=prefixset,
+            alpha_premium=alpha_premium,
+            beta_mobility=beta_mobility,
+            gamma_diversity=gamma_diversity,
+            use_transpo=use_transpo,
+            transpo_cap=transpo_cap,
         )
         log_with_time(f"Best result with start word '{start_word}': {score}", color=Fore.GREEN)
         log_with_time("Move sequence:", color=Fore.GREEN)
@@ -458,6 +487,11 @@ def run_solver():
             first_moves=first_moves,
             max_moves=max_moves,
             prefixset=prefixset,
+            alpha_premium=alpha_premium,
+            beta_mobility=beta_mobility,
+            gamma_diversity=gamma_diversity,
+            use_transpo=use_transpo,
+            transpo_cap=transpo_cap,
         )
 
     if not best_results:
@@ -479,7 +513,7 @@ def run_solver():
         )
         print("-" * 40)
 
-    # >>> ADDED BACK: compare with today's leaderboard <<<
+    # Compare vs leaderboard (if we fetched it)
     if 'leaderboard_data' in locals() and leaderboard_data:
         print_leaderboard_summary(best_total, leaderboard_data)
 
