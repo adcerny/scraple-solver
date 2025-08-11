@@ -1,18 +1,22 @@
 from collections import Counter, defaultdict
 import concurrent.futures
 import time
+import hashlib
 from colorama import Fore, Style
 from utils import log_with_time, vlog, N, PRINT_LOCK, VERBOSE, Direction
 from board import board_valid, place_word, print_board
 from score_cache import cached_board_score, board_to_tuple, board_hash
 
-# ---- Fixed heuristic weights (kept — gave gains) ----
-ALPHA_PREMIUM = 0.5      # weight for premium_coverage
-BETA_MOBILITY = 0.2      # weight for future_mobility (anchors)
-GAMMA_DIVERSITY = 0.01   # penalty per repeat (row,col,dir) at a ply
+# ---- Default heuristic weights (can be overridden via params from solver) ----
+ALPHA_PREMIUM_DEFAULT = 0.5   # weight for premium_coverage
+BETA_MOBILITY_DEFAULT = 0.2   # weight for future_mobility (anchors)
+GAMMA_DIVERSITY_DEFAULT = 0.01  # penalty per repeat (row,col,dir) at a ply
 
-# ---- Transposition table always ON ----
-TRANSPO_CAP = 200_000
+
+def _token64(word: str) -> int:
+    """Deterministic 64-bit token for a word (for Zobrist-style hashing)."""
+    h = hashlib.blake2b(word.encode("utf-8"), digest_size=8).digest()
+    return int.from_bytes(h, "little")
 
 
 def can_play_word_on_board(word, r0, c0, d, board, rack, wordset=None, prefixset=None):
@@ -330,18 +334,39 @@ def full_beam_search(
     original_bonus,
     beam_width=5,
     max_moves=20,
+    alpha_premium=ALPHA_PREMIUM_DEFAULT,
+    beta_mobility=BETA_MOBILITY_DEFAULT,
+    gamma_diversity=GAMMA_DIVERSITY_DEFAULT,
+    use_transpo=False,
+    transpo_cap=200000,
+    *,
+    _word_tokens=None,
+    _rem_zobrist=None,
 ):
-    """Beam search with multi-objective priority, diversity, and transposition pruning (always ON)."""
-    # state entries: (priority_score, current_score, board, rack_count, placed_set, moves_list, remaining_words)
+    """Beam search with multi-objective priority, diversity, and optional transposition pruning.
+       Now transposition key includes remaining-words Zobrist hash to avoid over-pruning."""
+    # Prepare Zobrist bookkeeping if using transpo
+    if use_transpo:
+        if _word_tokens is None:
+            # Build tokens once for all distinct words we'll see in this branch
+            _word_tokens = {w: _token64(w) for w in set(words)}
+        if _rem_zobrist is None:
+            rz = 0
+            # XOR tokens for each element of list (handles duplicates correctly)
+            for w in words:
+                rz ^= _word_tokens.get(w) or _token64(w)
+            _rem_zobrist = rz
+
+    # state entries: (priority_score, current_score, board, rack_count, placed_set, moves_list, remaining_words, rem_zobrist)
     init_score = cached_board_score(board_to_tuple(board), board_to_tuple(original_bonus)) if words else 0
-    state = [(init_score, init_score, board, rack_count, set(placed), [], words)]
+    state = [(init_score, init_score, board, rack_count, set(placed), [], words, _rem_zobrist)]
     best_score = 0
     best_board = None
     best_moves = None
     move_num = 1
 
-    # transposition table: (board_hash, rack_key, depth) -> best_score
-    transpo = {}
+    # transposition table: (board_hash, rack_key, depth, rem_zobrist) -> best_score
+    transpo = {} if use_transpo else None
 
     if not words:
         if board_valid(board, wordset):
@@ -354,7 +379,7 @@ def full_beam_search(
         # diversity tracking for this ply
         repeat_counts = defaultdict(int)
 
-        for _, cur_score, b, rc, pl, moves, rem_words in state:
+        for _, cur_score, b, rc, pl, moves, rem_words, rem_rz in state:
             touch = None if not moves else pl
             pruned_words = prune_words(rem_words, rc, b)
             candidates = find_best(
@@ -376,39 +401,64 @@ def full_beam_search(
                 if not validate_new_words(b2, wordset, w, r0, c0, d):
                     continue
 
-                # Transposition prune (always enabled)
-                h = board_hash(board_to_tuple(b2), board_to_tuple(original_bonus))
-                rk = _rack_key(rack_after)
-                key = (h, rk, move_num)
-                new_score = cached_board_score(board_to_tuple(b2), board_to_tuple(original_bonus))
-                prev = transpo.get(key)
-                if prev is not None and prev >= new_score:
-                    continue  # dominated
-                transpo[key] = new_score
-                # size cap (simple trim)
-                if len(transpo) > TRANSPO_CAP:
-                    # drop ~1% oldest-ish items (not true LRU, but cheap)
-                    for _ in range(max(1, TRANSPO_CAP // 100)):
-                        transpo.pop(next(iter(transpo)))
+                # Optional transposition prune
+                if use_transpo:
+                    h = board_hash(board_to_tuple(b2), board_to_tuple(original_bonus))
+                    rk = _rack_key(rack_after)
+                    # compute next remaining-words zobrist (remove all occurrences of w)
+                    count_removed = rem_words.count(w)
+                    next_rz = rem_rz
+                    if count_removed % 2 == 1:
+                        # XOR k times == XOR once if k is odd
+                        tok = _word_tokens.get(w) if _word_tokens else _token64(w)
+                        next_rz ^= tok
+
+                    key = (h, rk, move_num, next_rz)
+                    new_score = cached_board_score(board_to_tuple(b2), board_to_tuple(original_bonus))
+                    prev = transpo.get(key)
+                    if prev is not None and prev >= new_score:
+                        continue  # dominated
+                    transpo[key] = new_score
+                    # size cap (simple trim)
+                    if len(transpo) > transpo_cap:
+                        # drop ~1% oldest-ish items (not true LRU, but cheap)
+                        for _ in range(max(1, transpo_cap // 100)):
+                            transpo.pop(next(iter(transpo)))
 
                 # Compute features
+                new_score = cached_board_score(board_to_tuple(b2), board_to_tuple(original_bonus))
                 prem = premium_coverage_from_move(b, b2, original_bonus, w, r0, c0, d)
                 mob = count_future_mobility(b2)
 
                 # Diversity penalty: penalize repeated (row,col,dir) at this depth
                 key_div = (r0, c0, d)
-                penalty = GAMMA_DIVERSITY * repeat_counts[key_div]
+                penalty = gamma_diversity * repeat_counts[key_div]
                 repeat_counts[key_div] += 1
 
-                priority = new_score + ALPHA_PREMIUM * prem + BETA_MOBILITY * mob - penalty
+                priority = new_score + alpha_premium * prem + beta_mobility * mob - penalty
 
                 pl2 = {(r, c) for r in range(N) for c in range(N) if len(b2[r][c]) == 1}
                 next_words = rem_words.copy()
+                # remove all occurrences of w (mirrors earlier behaviour)
                 try:
                     while True:
                         next_words.remove(w)
                 except ValueError:
                     pass
+
+                # Update remaining-words zobrist for child
+                if use_transpo:
+                    # we already computed odd/even above; recompute here to keep code clear
+                    cnt = rem_words.count(w)
+                    child_rz = rem_rz
+                    if cnt % 2 == 1:
+                        tok = _word_tokens.get(w)
+                        if tok is None:
+                            tok = _token64(w)
+                            _word_tokens[w] = tok
+                        child_rz ^= tok
+                else:
+                    child_rz = None
 
                 next_state.append(
                     (
@@ -419,6 +469,7 @@ def full_beam_search(
                         pl2,
                         moves + [(sc, w, d, r0, c0)],
                         next_words,
+                        child_rz,
                     )
                 )
 
@@ -450,10 +501,26 @@ def beam_from_first(
     beam_width,
     max_moves=20,
     prefixset=None,
+    alpha_premium=ALPHA_PREMIUM_DEFAULT,
+    beta_mobility=BETA_MOBILITY_DEFAULT,
+    gamma_diversity=GAMMA_DIVERSITY_DEFAULT,
+    use_transpo=False,
+    transpo_cap=200000,
 ):
     """Run a beam search after making an initial play."""
     play_word = play[1]
+    # Remove ALL occurrences of the played word from the simulation list
     words_for_sim = [w for w in words if w != play_word]
+
+    # If using transpo, prebuild tokens and initial remaining-words zobrist for this branch
+    word_tokens = {w: _token64(w) for w in set(words_for_sim)} if use_transpo else None
+    rem_rz = None
+    if use_transpo:
+        rz = 0
+        for w in words_for_sim:
+            rz ^= word_tokens[w]
+        rem_rz = rz
+
     board_copy = [row[:] for row in board]
     rack_count_copy = rack_count.copy()
     can_play, rack_after_first = can_play_word_on_board(
@@ -462,6 +529,8 @@ def beam_from_first(
     if not can_play:
         return (float("-inf"), None, None)
     place_word(board_copy, play_word, play[3], play[4], play[2])
+    if not validate_new_words(board_copy, wordset, play_word, play[3], play[4], play[2]):
+        return (float("-inf"), None, None)
     placed_copy = {(r, c) for r in range(N) for c in range(N) if len(board_copy[r][c]) == 1}
     score, final_board, moves = full_beam_search(
         board_copy,
@@ -473,6 +542,13 @@ def beam_from_first(
         original_bonus,
         beam_width=beam_width,
         max_moves=max_moves,
+        alpha_premium=alpha_premium,
+        beta_mobility=beta_mobility,
+        gamma_diversity=gamma_diversity,
+        use_transpo=use_transpo,
+        transpo_cap=transpo_cap,
+        _word_tokens=word_tokens,
+        _rem_zobrist=rem_rz,
     )
     return (score, final_board, [(play[0], play_word, play[2], play[3], play[4])] + (moves if moves else []))
 
@@ -487,6 +563,11 @@ def explore_alternatives(
     beam_width,
     max_moves,
     prefixset=None,
+    alpha_premium=ALPHA_PREMIUM_DEFAULT,
+    beta_mobility=BETA_MOBILITY_DEFAULT,
+    gamma_diversity=GAMMA_DIVERSITY_DEFAULT,
+    use_transpo=False,
+    transpo_cap=200000,
 ):
     """Helper function to explore alternative moves for a given start word."""
     score, board_result, moves = beam_from_first(
@@ -499,6 +580,11 @@ def explore_alternatives(
         beam_width,
         max_moves,
         prefixset,
+        alpha_premium,
+        beta_mobility,
+        gamma_diversity,
+        use_transpo,
+        transpo_cap,
     )
     if board_result and board_valid(board_result, wordset):
         return score, board_result, moves
@@ -516,6 +602,11 @@ def parallel_first_beam(
     first_moves=None,
     max_moves=20,
     prefixset=None,
+    alpha_premium=ALPHA_PREMIUM_DEFAULT,
+    beta_mobility=BETA_MOBILITY_DEFAULT,
+    gamma_diversity=GAMMA_DIVERSITY_DEFAULT,
+    use_transpo=False,
+    transpo_cap=200000,
 ):
     """Search game states starting from multiple first moves in parallel."""
     rack_count = Counter(rack)
@@ -557,6 +648,11 @@ def parallel_first_beam(
                 beam_width,
                 max_moves,
                 prefixset,
+                alpha_premium,
+                beta_mobility,
+                gamma_diversity,
+                use_transpo,
+                transpo_cap,
             ): (time.time(), play, i)
             for i, play in enumerate(first_choices)
         }
