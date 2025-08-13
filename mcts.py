@@ -46,12 +46,14 @@ class MCTS:
         uct_c: float = 1.2,
         max_depth: int = 20,
         use_beam_rollout: bool = False,
+        root_top_k: int = None,
     ):
         self.top_k = top_k
         self.epsilon = epsilon
         self.uct_c = uct_c
         self.max_depth = max_depth
         self.use_beam_rollout = use_beam_rollout
+        self.root_top_k = root_top_k or top_k
         self.wordset = wordset
         self.prefixset = prefixset
         self.original_bonus = original_bonus
@@ -70,6 +72,7 @@ class MCTS:
             node.untried_moves = []
             return
         t0 = time.time()
+        limit = self.root_top_k if node.depth == 0 else self.top_k
         raw_moves = find_best(
             node.board,
             node.rack,
@@ -78,7 +81,7 @@ class MCTS:
             prefixset=self.prefixset,
             touch=None,
             original_bonus=self.original_bonus,
-            top_k=self.top_k * 5,
+            top_k=limit * 5,
         )
         if not raw_moves:
             node.untried_moves = []
@@ -90,7 +93,8 @@ class MCTS:
             existing = best_by_word.get(w)
             if existing is None or sc > existing[0]:
                 best_by_word[w] = (sc, w, d, r, c)
-        deduped = sorted(best_by_word.values(), key=lambda m: m[0], reverse=True)[: self.top_k]
+        max_keep = self.root_top_k if node.depth == 0 else self.top_k
+        deduped = sorted(best_by_word.values(), key=lambda m: m[0], reverse=True)[:max_keep]
         node.untried_moves = list(deduped)
         vlog(
             f"Depth {node.depth}: generated {len(raw_moves)} raw moves, {len(deduped)} unique",
