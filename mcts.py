@@ -69,7 +69,7 @@ class MCTS:
         if node.depth >= self.max_depth or not node.rack:
             node.untried_moves = []
             return
-        node.untried_moves = find_best(
+        raw_moves = find_best(
             node.board,
             node.rack,
             node.remaining_words,
@@ -77,8 +77,19 @@ class MCTS:
             prefixset=self.prefixset,
             touch=None,
             original_bonus=self.original_bonus,
-            top_k=self.top_k,
+            top_k=self.top_k * 5,
         )
+        if not raw_moves:
+            node.untried_moves = []
+            return
+
+        best_by_word = {}
+        for sc, w, d, r, c in raw_moves:
+            existing = best_by_word.get(w)
+            if existing is None or sc > existing[0]:
+                best_by_word[w] = (sc, w, d, r, c)
+        deduped = sorted(best_by_word.values(), key=lambda m: m[0], reverse=True)[: self.top_k]
+        node.untried_moves = list(deduped)
 
     def _uct_select(self, node: Node) -> Node:
         log_parent = math.log(node.visits)
