@@ -7,7 +7,7 @@ from typing import List, Optional, Tuple
 from utils import log_with_time, Direction
 from board import place_word
 from score_cache import cached_board_score, board_to_tuple
-from search import find_best, prune_words
+from search import find_best, prune_words, full_beam_search
 
 
 class Node:
@@ -45,11 +45,13 @@ class MCTS:
         epsilon: float = 0.2,
         uct_c: float = 1.2,
         max_depth: int = 20,
+        use_beam_rollout: bool = False,
     ):
         self.top_k = top_k
         self.epsilon = epsilon
         self.uct_c = uct_c
         self.max_depth = max_depth
+        self.use_beam_rollout = use_beam_rollout
         self.wordset = wordset
         self.prefixset = prefixset
         self.original_bonus = original_bonus
@@ -124,6 +126,27 @@ class MCTS:
         return child
 
     def _rollout(self, node: Node):
+        if self.use_beam_rollout:
+            placed = {
+                (r, c)
+                for r in range(len(node.board))
+                for c in range(len(node.board[r]))
+                if len(node.board[r][c]) == 1
+            }
+            max_moves = self.max_depth - node.depth
+            score, board_end, moves = full_beam_search(
+                node.board,
+                node.rack,
+                node.remaining_words,
+                self.wordset,
+                self.prefixset,
+                placed,
+                self.original_bonus,
+                beam_width=self.top_k,
+                max_moves=max_moves,
+            )
+            return score, moves, board_end
+
         board = [r[:] for r in node.board]
         rack = node.rack.copy()
         remaining = node.remaining_words.copy()

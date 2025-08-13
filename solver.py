@@ -198,6 +198,7 @@ def run_solver():
     parser.add_argument("--mcts-iters", type=int, default=1000, help="Iteration budget for MCTS search")
     parser.add_argument("--mcts-seconds", type=float, default=None, help="Time budget (seconds) for MCTS search")
     parser.add_argument("--epsilon", type=float, default=0.2, help="Epsilon for MCTS rollouts (default: 0.2)")
+    parser.add_argument("--beam-rollout", action="store_true", help="Use beam search to finish MCTS rollouts")
     args = parser.parse_args()
 
     beam_width = args.beam_width
@@ -208,6 +209,7 @@ def run_solver():
     mcts_iters = args.mcts_iters
     mcts_seconds = args.mcts_seconds
     epsilon = args.epsilon
+    beam_rollout = args.beam_rollout
 
     # Fixed heuristics & transpo (no CLI toggles)
     alpha_premium = ALPHA_PREMIUM
@@ -496,6 +498,7 @@ def run_solver():
                 top_k=beam_width,
                 epsilon=epsilon,
                 max_depth=max_moves,
+                use_beam_rollout=beam_rollout,
             )
             best_total, best_board, best_line = mcts.search(
                 iters=mcts_iters, seconds=mcts_seconds
