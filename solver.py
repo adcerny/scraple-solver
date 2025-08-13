@@ -5,117 +5,48 @@ from collections import Counter
 import utils
 from utils import N, MAPPING, log_with_time, vlog, LETTER_SCORES, Direction
 import os
-from colorama import Fore
+from colorama import Fore, Style
 from board import print_board, compute_board_score, get_letter_mask, score_word
 from score_cache import board_to_tuple, cached_board_score
 import json
 from datetime import datetime
 import concurrent.futures
 
-from search import parallel_first_beam, beam_from_first
+# Candidate generation / beam search
+from search import parallel_first_beam, beam_from_first, find_best
 
-
+# -------------------------------
+# External resources (current)
+# -------------------------------
 API_URL = "https://scraple.io/api/daily-puzzle"
-DICT_URL = "https://scraple.io/dictionary.txt"
 LEADERBOARD_URL = "https://scraple.io/api/leaderboard"
+DICT_URL = "https://scraple.io/dictionary.txt"
 
-# Fixed search knobs (kept simple, no CLI switches)
-ALPHA_PREMIUM = 0.5
-BETA_MOBILITY = 0.2
-GAMMA_DIVERSITY = 0.01
-USE_TRANSPO = True          # <— always ON now
-TRANSPO_CAP = 200_000
+# -------------------------------
+# DAWG hook (optional)
+# -------------------------------
+try:
+    from dawg import DAWG
+except Exception:
+    DAWG = None
 
 
+# -------------------------------
+# Dictionary
+# -------------------------------
 def _build_prefix_set(words):
-    prefixset = set()
+    prefixes = set()
     for w in words:
         for i in range(1, len(w)):
-            prefixset.add(w[:i])
-    return prefixset
-
-
-def extract_words_with_scores(board, bonus):
-    """Return a list of (score, word, positions) for all words on ``board``."""
-    words = []
-    mask = get_letter_mask(board)
-    for r in range(N):
-        c = 0
-        while c < N:
-            if mask[r][c]:
-                start = c
-                while c < N and mask[r][c]:
-                    c += 1
-                if c - start >= 2:
-                    letters = board[r][start:c]
-                    bonuses = bonus[r][start:c]
-                    positions = [(r, cc) for cc in range(start, c)]
-                    words.append((score_word(letters, bonuses), "".join(letters), positions))
-            else:
-                c += 1
-    for c in range(N):
-        r = 0
-        while r < N:
-            if mask[r][c]:
-                start = r
-                while r < N and mask[r][c]:
-                    r += 1
-                if r - start >= 2:
-                    letters = [board[i][c] for i in range(start, r)]
-                    bonuses = [bonus[i][c] for i in range(start, r)]
-                    positions = [(i, c) for i in range(start, r)]
-                    words.append((score_word(letters, bonuses), "".join(letters), positions))
-            else:
-                r += 1
-    return words
-
-
-def remove_word_from_board(board, bonus, rack, positions, usage):
-    """Remove letters for a word while tracking overlaps."""
-    for r, c in positions:
-        if (r, c) not in usage:
-            continue
-        letter = board[r][c]
-        usage[(r, c)] -= 1
-        if usage[(r, c)] == 0:
-            if letter:
-                rack.append(letter)
-            board[r][c] = bonus[r][c] if bonus[r][c] else ""
-            del usage[(r, c)]
-
-
-def fetch_board_and_rack():
-    resp = requests.get(API_URL)
-    resp.raise_for_status()
-    data = resp.json()
-    board = [["" for _ in range(N)] for _ in range(N)]
-    for bonus, (r, c) in data["bonusTilePositions"].items():
-        board[r][c] = MAPPING[bonus]
-    rack = [t["letter"].upper() for t in data["letters"]]
-
-    # Log the puzzle to a file
-    board_data = resp.text  # Exact string format from API
-    rack_data = ",".join(rack)
-    log_puzzle_to_file(board_data, rack_data)
-
-    return board, rack, data
-
-
-def log_puzzle_to_file(board_data, rack_data):
-    """Logs the day's puzzle (board and rack) to a file."""
-    today = datetime.now().strftime("%Y-%m-%d")
-    log_dir = "logs"
-    os.makedirs(log_dir, exist_ok=True)
-    log_file = os.path.join(log_dir, f"{today}-puzzle.log")
-
-    with open(log_file, "w") as f:
-        f.write("Board:\n")
-        f.write(board_data + "\n")
-        f.write("Rack:\n")
-        f.write(rack_data + "\n")
+            prefixes.add(w[:i])
+    return prefixes
 
 
 def load_dictionary():
+    """
+    Download and filter a dictionary for the current board size.
+    Returns (words, wordset, prefixset, dict_text).
+    """
     t0 = time.time()
     log_with_time("⟳ Downloading dictionary…")
     resp = requests.get(DICT_URL)
@@ -132,368 +63,418 @@ def load_dictionary():
     return words, wordset, prefixset, resp.text
 
 
-def print_leaderboard_summary(best_score, leaderboard_data):
-    leaderboard_scores = [entry["score"] for entry in leaderboard_data.get("scores", [])]
-    if leaderboard_scores:
-        rank = 1 + sum(1 for s in leaderboard_scores if s > best_score)
-        high_score = max(leaderboard_scores)
-        if best_score < high_score:
-            print(
-                Fore.LIGHTYELLOW_EX
-                + f"\nYour best score ({best_score}) would rank: {rank} out of {len(leaderboard_scores)} on the current leaderboard."
-            )
-            diff = high_score - best_score
-            print(
-                Fore.LIGHTYELLOW_EX
-                + f"Your score is {diff} points lower than the current leaderboard high score of {high_score}"
-            )
-            print(Fore.RESET, end="")
-        elif best_score == high_score:
-            print(
-                Fore.CYAN + f"\nYour best score ({best_score}) matches the current leaderboard high score!"
-            )
-            print(Fore.CYAN + f"You are tied for the high score! Rank: {rank} out of {len(leaderboard_scores)}")
-            print(Fore.RESET, end="")
+# -------------------------------
+# Puzzle fetch + logging
+# -------------------------------
+def log_puzzle_to_file(board_data_text, rack_csv):
+    """Logs the day's puzzle (raw board JSON text and rack csv) to a file."""
+    today = datetime.now().strftime("%Y-%m-%d")
+    log_dir = "logs"
+    os.makedirs(log_dir, exist_ok=True)
+    log_file = os.path.join(log_dir, f"{today}-puzzle.log")
+
+    log_data = {
+        "puzzle": json.loads(board_data_text),
+        "rack": rack_csv,
+        "best_result": None,
+        "saved_at": datetime.now().isoformat(timespec="seconds"),
+    }
+    with open(log_file, "w") as f:
+        json.dump(log_data, f, indent=2)
+    log_with_time(f"Puzzle logged to {log_file}", color=Fore.GREEN)
+
+
+def fetch_board_and_rack():
+    """
+    Returns:
+      board (NxN, bonuses in cells as 'DL','TL','DW','TW' else '')
+      rack (list of letters)
+      raw_json (dict) - the API response JSON
+    """
+    resp = requests.get(API_URL, timeout=10)
+    resp.raise_for_status()
+    data = resp.json()
+
+    # Build empty board and drop bonuses
+    board = [["" for _ in range(N)] for _ in range(N)]
+    for bonus, pos in data.get("bonusTilePositions", {}).items():
+        # API can return either [r,c] or {"r":..,"c":..}; normalize
+        if isinstance(pos, (list, tuple)) and len(pos) == 2:
+            r, c = pos
         else:
-            diff = best_score - high_score
-            print(
-                Fore.GREEN
-                + f"\nCongratulations! Your score {best_score} is {diff} higher than the current high score of {high_score}"
-            )
-            print(Fore.GREEN + f"Your score would be #1 on the leaderboard! Rank: {rank} out of {len(leaderboard_scores)}")
-            print(Fore.RESET, end="")
-    else:
+            r, c = pos["row"], pos["col"]
+        board[r][c] = MAPPING[bonus]
+
+    rack = [t["letter"].upper() for t in data["letters"]]
+
+    # Log the puzzle for reproducibility
+    log_puzzle_to_file(resp.text, ",".join(rack))
+    return board, rack, data
+
+
+# -------------------------------
+# Leaderboard utilities
+# -------------------------------
+def parse_leaderboard(resp):
+    try:
+        resp.raise_for_status()
+        return resp.json()
+    except Exception:
+        return None
+
+
+def leaderboard_gamestate_to_board(game_state):
+    """
+    Mirror of board.leaderboard_gamestate_to_board but local to solver to keep this file self-contained.
+    Convert a leaderboard API gameState dict to a 2D board (list of lists of str) and a bonus board.
+    """
+    # Lazy import to avoid circulars
+    from board import leaderboard_gamestate_to_board as _conv
+    return _conv(game_state)
+
+
+def print_leaderboard_summary(best_score, leaderboard_data):
+    """
+    Compare our best score to the leaderboard. Print a friendly summary.
+    """
+    if not leaderboard_data:
+        print("No leaderboard data to compare.")
+        return
+
+    leaderboard_scores = [entry.get("score") for entry in leaderboard_data.get("scores", []) if "score" in entry]
+    if not leaderboard_scores:
         print("Could not parse leaderboard scores.")
+        return
+
+    high_score = max(leaderboard_scores)
+    # Rank where higher is better
+    sorted_scores = sorted(leaderboard_scores, reverse=True)
+    rank = 1
+    for i, s in enumerate(sorted_scores, 1):
+        if s == high_score:
+            pass
+        if best_score < s:
+            rank = i + 1
+    total = len(sorted_scores)
+
+    if best_score < high_score:
+        diff = high_score - best_score
+        print(
+            Fore.LIGHTYELLOW_EX
+            + f"\nYour best score ({best_score}) would rank: {rank} out of {total} on the current leaderboard."
+        )
+        print(
+            Fore.LIGHTYELLOW_EX
+            + f"Your score is {diff} points lower than the current leaderboard high score of {high_score}"
+        )
+        print(Fore.RESET, end="")
+    elif best_score == high_score:
+        print(
+            Fore.CYAN + f"\nYour best score ({best_score}) matches the current leaderboard high score!"
+        )
+        print(Fore.CYAN + f"You are tied for the high score! Rank: {rank} out of {total}")
+        print(Fore.RESET, end="")
+    else:
+        diff = best_score - high_score
+        print(
+            Fore.GREEN
+            + f"\nCongratulations! Your score {best_score} is {diff} higher than the current high score of {high_score}"
+        )
+        print(Fore.GREEN + f"Your score would be #1 on the leaderboard! Rank: {rank} out of {total}")
+        print(Fore.RESET, end="")
 
 
+# -------------------------------
+# Board pretty-print helpers
+# -------------------------------
+def show_today_board(board, bonus, rack):
+    print("Today's Board:")
+    print_board(board, bonus)
+    print()
+    print(f"Rack: {' '.join(rack)}")
+    print()
+
+
+def summarize_fixed_words(board, bonus):
+    """Small helper to list any fixed words already on the initial board."""
+    mask = get_letter_mask(board)
+    words = []
+    # across
+    for r in range(N):
+        c = 0
+        while c < N:
+            if mask[r][c]:
+                start = c
+                while c < N and mask[r][c]:
+                    c += 1
+                if c - start >= 2:
+                    letters = [board[r][i] for i in range(start, c)]
+                    bonuses = bonus[r][start:c]
+                    positions = [(r, cc) for cc in range(start, c)]
+                    words.append((score_word(letters, bonuses), "".join(letters), positions))
+            else:
+                c += 1
+    # down
+    for c in range(N):
+        r = 0
+        while r < N:
+            if mask[r][c]:
+                start = r
+                while r < N and mask[r][c]:
+                    r += 1
+                if r - start >= 2:
+                    letters = [board[i][c] for i in range(start, r)]
+                    bonuses = [bonus[i][c] for i in range(start, r)]
+                    positions = [(i, c) for i in range(start, r)]
+                    words.append((score_word(letters, bonuses), "".join(letters), positions))
+            else:
+                r += 1
+    if words:
+        print(Fore.LIGHTBLUE_EX + "Fixed words on the board:")
+        for sc, w, pos in words:
+            print(Fore.LIGHTBLUE_EX + f"  {w} (score {sc}) at {pos}")
+        print(Fore.RESET, end="")
+
+
+# -------------------------------
+# Solver
+# -------------------------------
 def run_solver():
     parser = argparse.ArgumentParser(description="ScrapleSolver")
-    parser.add_argument("--beam-width", type=int, default=10, help="Beam width for the search (default: 10)")
-    parser.add_argument(
-        "--first-moves", type=int, default=None, help="Number of opening moves to explore (default: beam width)"
-    )
+    parser.add_argument("--beam-width", type=int, default=50, help="Beam width for the search (default: 50)")
+    parser.add_argument("--num-games", type=int, default=50, help="Number of first-move candidates to simulate (default: 50)")
+    parser.add_argument("--first-moves", type=int, default=None, help="Override number of opening moves to explore")
     parser.add_argument("--depth", type=int, default=20, help="Maximum number of moves to search (default: 20)")
     parser.add_argument("--verbose", action="store_true", help="Enable verbose logging")
     parser.add_argument("--no-cache", action="store_true", help="Disable board score caching")
     parser.add_argument("--log-puzzle", action="store_true", help="Save the day's puzzle and best result to a JSON log file")
-    parser.add_argument(
-        "--high-score-deep-dive",
-        nargs="?",
-        const=1000,
-        type=int,
-        help="After initial search, explore all subsequent moves for the best starting word. Optionally specify beam width (default: 1000)",
-    )
-    parser.add_argument("--load-log", type=str, default=None, help="Path to a JSON log file to load the puzzle from instead of calling the API")
+
+    # Start word forcing (optional)
     parser.add_argument("--start-word", type=str, default=None, help="Specify a start word to force as the first move")
-    parser.add_argument(
-        "--start-pos",
-        type=str,
-        default=None,
-        help='Specify position and direction for start word as "row,col,dir" (e.g. "7,7,A"). Only valid if --start-word is provided.',
-    )
-    parser.add_argument("--num-games", type=int, default=50, help="Number of games to play in parallel (default: 50)")
-    parser.add_argument("--improve-leaderboard", action="store_true", help="Start search from the current leaderboard high-score board")
+    parser.add_argument("--start-word-pos", type=str, default=None, help="row,col,dir (e.g. 1,0,A) for forced start word")
+
+    # Beam heuristics
+    parser.add_argument("--alpha-premium", type=float, default=0.5, help="Weight for premium coverage shaping")
+    parser.add_argument("--beta-mobility", type=float, default=0.2, help="Weight for anchor/mobility shaping")
+    parser.add_argument("--gamma-diversity", type=float, default=0.01, help="Penalty per repeated (r,c,dir) choice")
+
+    # Transposition table
+    parser.add_argument("--use-transpo", action="store_true", help="Enable transposition table")
+    parser.add_argument("--transpo-cap", type=int, default=200000, help="Max transposition entries")
+
+    # Generator mode
+    parser.add_argument("--gen", type=str, choices=["anchor", "scan"], default="anchor",
+                        help="Candidate generator: 'anchor' = DAWG+anchors (hybrid pad), 'scan' = legacy scanner")
+
+    # Hybrid legacy pad knobs (sane defaults; small and capped in search.py)
+    parser.add_argument("--legacy-pad-k", type=int, default=4, help="Extra legacy candidates to add each move (cap ~6)")
+    parser.add_argument("--legacy-pad-ratio", type=float, default=0.2, help="Pad size as fraction of beam width")
+
+    # Power user: try to beat current leaderboard high score board directly
+    parser.add_argument("--improve-leaderboard", action="store_true",
+                        help="If present, simulate starting from current leaderboard best board state")
+    
+    parser.add_argument("--empty-anchor-cap", type=int, default=250,
+                    help="Max number of anchor emits on an empty board (default: 250)")
+
     args = parser.parse_args()
 
-    beam_width = args.beam_width
-    first_moves = args.first_moves
-    max_moves = args.depth
-    num_games = args.num_games
+    empty_anchor_cap = args.empty_anchor_cap
 
-    # Fixed heuristics & transpo (no CLI toggles)
-    alpha_premium = ALPHA_PREMIUM
-    beta_mobility = BETA_MOBILITY
-    gamma_diversity = GAMMA_DIVERSITY
-    use_transpo = USE_TRANSPO
-    transpo_cap = TRANSPO_CAP
-
-    utils.start_time = time.time()
+    # Verbosity + caching flags
     utils.VERBOSE = args.verbose
-    improvement_done = False
-    best_total = None
-    best_results = None
+    if args.no_cache:
+        from score_cache import DISABLE_CACHE
+        DISABLE_CACHE = True
 
-    # Pass cache disable flag to score_cache
-    import score_cache
-    score_cache.CACHE_DISABLED = args.no_cache
+    # --- FIX: ensure utils.start_time is initialized even if the module defines it as None ---
+    if getattr(utils, "start_time", None) is None:
+        utils.start_time = time.time()
 
-    if args.load_log:
+    # Pull today's puzzle, dictionary, and leaderboard concurrently (unless loading a saved log)
+    if args.start_word:
+        args.start_word = args.start_word.strip().upper()
+
+    # Possibly load from a previous log (for deterministic reruns)
+    leaderboard_data = None
+    board = None
+    rack = None
+    dict_text = ""
+    words = []
+    wordset = set()
+    prefixset = set()
+
+    if getattr(args, "load_log", None):
         try:
             with open(args.load_log, "r") as f:
                 log_data = json.load(f)
-        except FileNotFoundError:
-            log_with_time(f"Could not find log file: {args.load_log}", color=Fore.RED)
-            return
+            puzzle = log_data["puzzle"]
+            board = [["" for _ in range(N)] for _ in range(N)]
+            for bonus, pos in puzzle["bonusTilePositions"].items():
+                if isinstance(pos, (list, tuple)):
+                    r, c = pos
+                else:
+                    r, c = pos["row"], pos["col"]
+                board[r][c] = MAPPING[bonus]
+            rack = [t["letter"].upper() for t in puzzle["letters"]]
+            leaderboard_data = None
+            words, wordset, prefixset = load_dictionary()[:3]
         except Exception as e:
             log_with_time(f"Error loading log file: {e}", color=Fore.RED)
             return
-        puzzle = log_data["puzzle"]
-        board = [["" for _ in range(N)] for _ in range(N)]
-        for bonus, pos in puzzle["bonusTilePositions"].items():
-            if isinstance(pos[0], int):
-                r, c = pos
-                board[r][c] = MAPPING[bonus]
-        rack = [t["letter"].upper() for t in puzzle["letters"]]
-        leaderboard_data = None
-        words, wordset, prefixset = load_dictionary()[:3]
     else:
-        # Fetch the board, dictionary, and leaderboard in parallel
         with concurrent.futures.ThreadPoolExecutor() as executor:
-            future_board = executor.submit(fetch_board_and_rack)
-            future_dict = executor.submit(load_dictionary)
-            future_leaderboard = executor.submit(lambda: requests.get(LEADERBOARD_URL, timeout=10))
-            board, rack, board_api_data = future_board.result()
+            fx_puzzle = executor.submit(fetch_board_and_rack)
+            fx_dict = executor.submit(load_dictionary)
+            fx_lb = executor.submit(lambda: requests.get(LEADERBOARD_URL, timeout=10))
 
-            # Accept 4-tuple or tolerant 3-tuple from tests/mocks
-            dict_result = future_dict.result()
+            board, rack, puzzle_json = fx_puzzle.result()
+
+            # dict
+            dict_result = fx_dict.result()
             if isinstance(dict_result, tuple) and len(dict_result) == 4:
                 words, wordset, prefixset, dict_text = dict_result
             elif isinstance(dict_result, tuple) and len(dict_result) == 3:
-                words, wordset, third = dict_result
-                if isinstance(third, set):
-                    prefixset = third
-                    dict_text = ""
-                else:
-                    dict_text = third
-                    prefixset = _build_prefix_set(words)
+                words, wordset, prefixset = dict_result
             else:
-                words = dict_result[0]
-                wordset = dict_result[1]
-                dict_text = dict_result[3] if len(dict_result) > 3 else ""
-                ps = dict_result[2] if len(dict_result) > 2 else None
-                prefixset = ps if isinstance(ps, set) else _build_prefix_set(words)
+                raise RuntimeError("Bad dictionary result")
 
-            leaderboard_resp = future_leaderboard.result()
+            # leaderboard
             try:
-                leaderboard_resp.raise_for_status()
-                leaderboard_data = leaderboard_resp.json()
+                leaderboard_data = parse_leaderboard(fx_lb.result())
             except Exception:
                 leaderboard_data = None
 
-    # Log the puzzle if the argument is provided
-    if args.log_puzzle:
-        api_response = json.dumps(
-            {
-                "letters": [{"letter": t.upper(), "points": LETTER_SCORES[t.upper()]} for t in rack],
-                "bonusTilePositions": {bonus: pos for bonus, pos in MAPPING.items()},
-                "date": time.strftime("%Y-%m-%d"),
-                "displayDate": time.strftime("%B %d, %Y"),
-            }
-        )
-        utils.log_puzzle_to_file(api_response)
+    # Build DAWG if available
+    dawg = None
+    if DAWG is not None:
+        try:
+            t_dawg = time.time()
+            dawg = DAWG.build(words)
+            t_dawg = (time.time() - t_dawg) * 1000
+            log_with_time(f"DAWG built: {'yes' if dawg else 'no'} ({t_dawg:.0f} ms)")
+        except Exception as e:
+            log_with_time(f"DAWG build failed, falling back to scan: {e}", color=Fore.YELLOW)
+            dawg = None
+    else:
+        log_with_time("DAWG module not available — using legacy scan", color=Fore.YELLOW)
 
-    print("Today's Board:")
-    print_board(board)
-    print("Rack:", " ".join(rack))
+    # Show today's board and rack
     original_bonus = [row[:] for row in board]
+    show_today_board(board, original_bonus, rack)
+    summarize_fixed_words(board, original_bonus)
 
-    # Show leaderboard high score after today's board (and optionally try to improve it)
-    if not args.load_log and leaderboard_data:
-        leaderboard_scores = [entry["score"] for entry in leaderboard_data.get("scores", [])]
-        if leaderboard_scores:
-            high_score = max(leaderboard_scores)
-            highscore_entries = [entry for entry in leaderboard_data.get("scores", []) if entry["score"] == high_score]
-            print(Fore.LIGHTYELLOW_EX + f"\nCurrent High Score Board Layout (Score: {high_score}):")
-            from board import leaderboard_gamestate_to_board, print_board as print_board_func
+    # Show current leaderboard best layout (if any)
+    if leaderboard_data:
+        try:
+            leaderboard_scores = [entry["score"] for entry in leaderboard_data.get("scores", [])]
+            if leaderboard_scores:
+                high_score = max(leaderboard_scores)
+                top_entries = [e for e in leaderboard_data.get("scores", []) if e["score"] == high_score]
 
-            board_hs = bonus_hs = None
-            game_state_hs = None
-            for entry in highscore_entries:
-                game_state = entry.get("gameState")
-                if game_state:
+                print(Fore.LIGHTYELLOW_EX + f"\nCurrent High Score Board Layout (Score: {high_score}):")
+                any_printed = False
+                for entry in top_entries:
+                    gs = entry.get("gameState")
+                    if not gs:
+                        continue
                     try:
-                        board_hs, bonus_hs = leaderboard_gamestate_to_board(game_state)
-                        if game_state_hs is None:
-                            game_state_hs = game_state
-                        print_board_func(board_hs, bonus_hs)
+                        b_hs, bonus_hs = leaderboard_gamestate_to_board(gs)
+                        print_board(b_hs, bonus_hs)
+                        any_printed = True
                     except Exception as e:
                         print(Fore.LIGHTYELLOW_EX + f"    (Could not display board: {e})")
-            print(Fore.RESET, end="")
+                if any_printed:
+                    print(Fore.RESET, end="")
+        except Exception:
+            pass
 
-            if args.improve_leaderboard and board_hs is not None:
-                board = [row[:] for row in board_hs]
-                original_bonus = bonus_hs
-                rack = []
-                if game_state_hs:
-                    remaining = (
-                        game_state_hs.get("rack")
-                        or game_state_hs.get("remainingTiles")
-                        or game_state_hs.get("letters")
-                    )
-                    if remaining:
-                        items = remaining.values() if isinstance(remaining, dict) else remaining
-                        for item in items:
-                            if isinstance(item, dict):
-                                letter = item.get("letter")
-                                if letter:
-                                    rack.append(letter.upper())
-                            elif isinstance(item, str):
-                                if len(item) == 1:
-                                    rack.append(item.upper())
-                                else:
-                                    rack.extend(ch.upper() for ch in item)
-                words_on_board = extract_words_with_scores(board, original_bonus)
-                words_on_board.sort(key=lambda x: x[0])
-                usage = {}
-                for _, _, pos_list in words_on_board:
-                    for pos in pos_list:
-                        usage[pos] = usage.get(pos, 0) + 1
-                improved = False
-                for _, word_text, positions in words_on_board:
-                    remove_word_from_board(board, original_bonus, rack, positions, usage)
-                    new_score, new_results = parallel_first_beam(
-                        board,
-                        rack,
-                        words,
-                        wordset,
-                        original_bonus,
-                        beam_width=beam_width,
-                        num_games=num_games,
-                        first_moves=first_moves,
-                        max_moves=max_moves,
-                        prefixset=prefixset,
-                        alpha_premium=alpha_premium,
-                        beta_mobility=beta_mobility,
-                        gamma_diversity=gamma_diversity,
-                        use_transpo=use_transpo,
-                        transpo_cap=transpo_cap,
-                    )
-                    improved = True if new_score > high_score else improved
-                    if improved:
-                        best_total = new_score
-                        best_results = new_results
-                        break
-                if not improved:
-                    best_total, best_results = parallel_first_beam(
-                        board,
-                        rack,
-                        words,
-                        wordset,
-                        original_bonus,
-                        beam_width=beam_width,
-                        num_games=num_games,
-                        first_moves=first_moves,
-                        max_moves=max_moves,
-                        prefixset=prefixset,
-                        alpha_premium=alpha_premium,
-                        beta_mobility=beta_mobility,
-                        gamma_diversity=gamma_diversity,
-                        use_transpo=use_transpo,
-                        transpo_cap=transpo_cap,
-                    )
-                    improvement_done = True
+    # Argument/plumbing setup
+    beam_width = args.beam_width
+    num_games = args.num_games
+    # If first_moves not provided, default to num_games (not beam width).
+    first_moves = args.first_moves if args.first_moves is not None else num_games
+    max_moves = args.depth
+    alpha_premium = args.alpha_premium
+    beta_mobility = args.beta_mobility
+    gamma_diversity = args.gamma_diversity
+    use_transpo = args.use_transpo
+    transpo_cap = args.transpo_cap
 
-    # If --start-word is provided, check it
+    use_anchor_gen = (args.gen == "anchor")
+    legacy_pad_k = args.legacy_pad_k
+    legacy_pad_ratio = args.legacy_pad_ratio
+
+    # If a start word is forced, create that placement then continue beam from there
+    best_total = float("-inf")
+    best_results = []
+
     if args.start_word:
-        start_word = args.start_word.upper()
-        log_with_time(f"Using start word: '{start_word}'", color=Fore.YELLOW)
-        rack_counter = Counter(rack)
-        word_counter = Counter(start_word)
-        if any(word_counter[ch] > rack_counter.get(ch, 0) for ch in word_counter):
-            log_with_time(f"Cannot form start word '{start_word}' from rack: {' '.join(rack)}", color=Fore.RED)
-            return
-        from search import find_best, prune_words  # beam_from_first already imported above
-
-        pruned_words = prune_words(words, rack_counter, board)
-        log_with_time(f"Pruned word list: {len(pruned_words)} words", color=Fore.CYAN)
-        # If position is specified, validate and use it
+        # Determine placement: explicit pos or best legal placement
         placement = None
-        if args.start_pos:
+        rack_counter = Counter(rack)
+
+        if args.start_word_pos:
             try:
-                row, col, dirn = args.start_pos.split(",")
-                row = int(row)
-                col = int(col)
-                dirn = dirn.upper()
-                dir_enum = Direction.ACROSS if dirn == Direction.ACROSS.value else Direction.DOWN
-                valid_placements = find_best(
-                    board,
-                    rack_counter,
-                    [start_word],
-                    wordset,
-                    prefixset,
-                    None,
-                    original_bonus,
-                    top_k=None,
+                row_s, col_s, dir_s = args.start_word_pos.split(",")
+                row = int(row_s)
+                col = int(col_s)
+                dir_enum = Direction.ACROSS if dir_s.strip().upper().startswith("A") else Direction.DOWN
+                # Validate placement against current board
+                cands = find_best(
+                    board, rack_counter, [args.start_word], wordset,
+                    prefixset, None, original_bonus, top_k=None, dawg=dawg
                 )
-                for p in valid_placements:
+                for p in cands:
                     if p[2] == dir_enum and p[3] == row and p[4] == col:
                         placement = p
                         break
                 if not placement:
-                    log_with_time(f"Cannot place start word '{start_word}' at {row},{col},{dirn}.", color=Fore.RED)
+                    log_with_time(f"Cannot place start word '{args.start_word}' at {row},{col},{dir_s}.", color=Fore.RED)
                     return
             except Exception as e:
-                log_with_time(f"Invalid --start-word-pos format. Use row,col,dir (e.g. 7,7,A). Error: {e}", color=Fore.RED)
+                log_with_time(f"Invalid --start-word-pos. Use row,col,dir (e.g. 1,0,A). Error: {e}", color=Fore.RED)
                 return
         else:
-            valid_placements = find_best(
-                board,
-                rack_counter,
-                [start_word],
-                wordset,
-                prefixset,
-                None,
-                original_bonus,
-                top_k=None,
+            cands = find_best(
+                board, rack_counter, [args.start_word], wordset,
+                prefixset, None, original_bonus, top_k=None, dawg=dawg
             )
-            if not valid_placements:
-                log_with_time(f"No valid placements for start word '{start_word}' on the board.", color=Fore.RED)
+            if not cands:
+                log_with_time(f"No valid placements for start word '{args.start_word}' on the board.", color=Fore.RED)
                 return
-            placement = max(valid_placements, key=lambda x: x[0])
+            placement = max(cands, key=lambda x: x[0])
 
         log_with_time(
-            f"Best placement for '{start_word}': score {placement[0]}, position {placement[3]},{placement[4]},{placement[2].value}",
+            f"Best placement for '{args.start_word}': score {placement[0]}, position {placement[3]},{placement[4]},{placement[2].value}",
             color=Fore.YELLOW,
         )
-        score, board_after, moves = beam_from_first(
-            placement,
-            board,
-            rack_counter,
-            pruned_words,
-            wordset,
-            original_bonus,
-            beam_width=beam_width,
-            max_moves=max_moves,
-            prefixset=prefixset,
-            alpha_premium=alpha_premium,
-            beta_mobility=beta_mobility,
-            gamma_diversity=gamma_diversity,
-            use_transpo=use_transpo,
-            transpo_cap=transpo_cap,
-        )
-        log_with_time(f"Best result with start word '{start_word}': {score}", color=Fore.GREEN)
-        log_with_time("Move sequence:", color=Fore.GREEN)
-        for move in moves:
-            sc, w, d, r0, c0 = move
-            log_with_time(f"  {w} at {r0},{c0},{d.value} scoring {sc}", color=Fore.GREEN)
-        log_with_time("Final simulated board:", color=Fore.GREEN)
-        print()
-        print_board(board_after, original_bonus)
-        print(
-            f"Final board score: {cached_board_score(board_to_tuple(board_after), board_to_tuple(original_bonus))}"
-        )
-        print("-" * 40)
-        return
 
-    if not improvement_done:
+        # Run beam from that first move
+        score, final_board, moves = beam_from_first(
+            placement, board, rack_counter, words, wordset, original_bonus,
+            beam_width=beam_width, max_moves=max_moves, prefixset=prefixset,
+            alpha_premium=alpha_premium, beta_mobility=beta_mobility, gamma_diversity=gamma_diversity,
+            use_transpo=use_transpo, transpo_cap=transpo_cap,
+            dawg=dawg, use_anchor_gen=use_anchor_gen,
+            legacy_pad_k=legacy_pad_k, legacy_pad_ratio=legacy_pad_ratio,
+            empty_anchor_cap=empty_anchor_cap,
+        )
+        if final_board:
+            best_total = score
+            best_results = [(score, final_board, moves)]
+    else:
+        # Normal: parallel first-move exploration
         best_total, best_results = parallel_first_beam(
-            board,
-            rack,
-            words,
-            wordset,
-            original_bonus,
-            beam_width=beam_width,
-            num_games=num_games,
-            first_moves=first_moves,
-            max_moves=max_moves,
-            prefixset=prefixset,
-            alpha_premium=alpha_premium,
-            beta_mobility=beta_mobility,
-            gamma_diversity=gamma_diversity,
-            use_transpo=use_transpo,
-            transpo_cap=transpo_cap,
+            board, rack, words, wordset, original_bonus,
+            beam_width=beam_width, num_games=num_games, first_moves=first_moves, max_moves=max_moves,
+            prefixset=prefixset, alpha_premium=alpha_premium, beta_mobility=beta_mobility, gamma_diversity=gamma_diversity,
+            use_transpo=use_transpo, transpo_cap=transpo_cap, dawg=dawg,
+            use_anchor_gen=use_anchor_gen, legacy_pad_k=legacy_pad_k, legacy_pad_ratio=legacy_pad_ratio,
+            empty_anchor_cap=empty_anchor_cap, 
         )
 
+    # Present results
     if not best_results:
         log_with_time("No valid full simulation found.")
         return
@@ -502,20 +483,21 @@ def run_solver():
     for idx, (score, best_board, best_moves) in enumerate(best_results, 1):
         log_with_time(f"Solution {idx}:", color=Fore.GREEN)
         log_with_time("Move sequence:", color=Fore.GREEN)
-        for move in best_moves:
-            sc, w, d, r0, c0 = move
+        for sc, w, d, r0, c0 in best_moves:
             log_with_time(f"  {w} at {r0},{c0},{d.value} scoring {sc}", color=Fore.GREEN)
         log_with_time("Final simulated board:", color=Fore.GREEN)
         print()
         print_board(best_board, original_bonus)
-        print(
-            f"Final board score: {cached_board_score(board_to_tuple(best_board), board_to_tuple(original_bonus))}"
-        )
+        print(f"Final board score: {cached_board_score(board_to_tuple(best_board), board_to_tuple(original_bonus))}")
         print("-" * 40)
 
     # Compare vs leaderboard (if we fetched it)
-    if 'leaderboard_data' in locals() and leaderboard_data:
+    if leaderboard_data:
         print_leaderboard_summary(best_total, leaderboard_data)
 
     total_elapsed = time.time() - utils.start_time
     print(f"Total time: {int(total_elapsed // 60)}m {total_elapsed % 60:.1f}s")
+
+
+if __name__ == "__main__":
+    run_solver()
