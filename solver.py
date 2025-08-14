@@ -13,6 +13,7 @@ from datetime import datetime
 import concurrent.futures
 
 from search import parallel_first_beam, beam_from_first
+from mcts import MCTS
 
 
 API_URL = "https://scraple.io/api/daily-puzzle"
@@ -193,12 +194,29 @@ def run_solver():
     )
     parser.add_argument("--num-games", type=int, default=50, help="Number of games to play in parallel (default: 50)")
     parser.add_argument("--improve-leaderboard", action="store_true", help="Start search from the current leaderboard high-score board")
+    parser.add_argument("--search", choices=["beam", "mcts"], default="beam", help="Search strategy to use (default: beam)")
+    parser.add_argument("--mcts-iters", type=int, default=1000, help="Iteration budget for MCTS search")
+    parser.add_argument("--mcts-seconds", type=float, default=None, help="Time budget (seconds) for MCTS search")
+    parser.add_argument("--epsilon", type=float, default=0.2, help="Epsilon for MCTS rollouts (default: 0.2)")
+    parser.add_argument("--beam-rollout", action="store_true", help="Use beam search to finish MCTS rollouts")
+    parser.add_argument(
+        "--root-top-k",
+        type=int,
+        default=None,
+        help="Override beam width for the root node to explore more opening moves",
+    )
     args = parser.parse_args()
 
     beam_width = args.beam_width
     first_moves = args.first_moves
     max_moves = args.depth
     num_games = args.num_games
+    search_mode = args.search
+    mcts_iters = args.mcts_iters
+    mcts_seconds = args.mcts_seconds
+    epsilon = args.epsilon
+    beam_rollout = args.beam_rollout
+    root_top_k = args.root_top_k
 
     # Fixed heuristics & transpo (no CLI toggles)
     alpha_premium = ALPHA_PREMIUM
@@ -476,23 +494,42 @@ def run_solver():
         return
 
     if not improvement_done:
-        best_total, best_results = parallel_first_beam(
-            board,
-            rack,
-            words,
-            wordset,
-            original_bonus,
-            beam_width=beam_width,
-            num_games=num_games,
-            first_moves=first_moves,
-            max_moves=max_moves,
-            prefixset=prefixset,
-            alpha_premium=alpha_premium,
-            beta_mobility=beta_mobility,
-            gamma_diversity=gamma_diversity,
-            use_transpo=use_transpo,
-            transpo_cap=transpo_cap,
-        )
+        if search_mode == "mcts":
+            mcts = MCTS(
+                board,
+                rack,
+                words,
+                wordset,
+                prefixset,
+                original_bonus,
+                top_k=beam_width,
+                epsilon=epsilon,
+                max_depth=max_moves,
+                use_beam_rollout=beam_rollout,
+                root_top_k=root_top_k,
+            )
+            best_total, best_board, best_line = mcts.search(
+                iters=mcts_iters, seconds=mcts_seconds
+            )
+            best_results = [(best_total, best_board, best_line)] if best_board is not None else []
+        else:
+            best_total, best_results = parallel_first_beam(
+                board,
+                rack,
+                words,
+                wordset,
+                original_bonus,
+                beam_width=beam_width,
+                num_games=num_games,
+                first_moves=first_moves,
+                max_moves=max_moves,
+                prefixset=prefixset,
+                alpha_premium=alpha_premium,
+                beta_mobility=beta_mobility,
+                gamma_diversity=gamma_diversity,
+                use_transpo=use_transpo,
+                transpo_cap=transpo_cap,
+            )
 
     if not best_results:
         log_with_time("No valid full simulation found.")
