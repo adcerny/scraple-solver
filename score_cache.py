@@ -2,13 +2,31 @@ from board import compute_board_score
 import hashlib
 import utils
 
+
+from collections import OrderedDict
+
 _seen_hashes = {}
 _actual_hits = 0
 _actual_misses = 0
 CACHE_DISABLED = False
 
-# Simple cap to avoid unbounded growth
+# LRU cache using OrderedDict
 MAX_CACHE_SIZE = 50000
+class LRUCache(OrderedDict):
+    def __init__(self, maxsize=MAX_CACHE_SIZE, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.maxsize = maxsize
+    def __getitem__(self, key):
+        value = super().__getitem__(key)
+        self.move_to_end(key)
+        return value
+    def __setitem__(self, key, value):
+        if key in self:
+            self.move_to_end(key)
+        super().__setitem__(key, value)
+        if len(self) > self.maxsize:
+            oldest = next(iter(self))
+            del self[oldest]
 
 
 def board_to_tuple(board):
@@ -38,10 +56,11 @@ def cached_board_score(board_tuple, bonus_tuple, cache=None):
         count = _seen_hashes.get(h, 0)
         _seen_hashes[h] = count + 1
 
+
     if cache is None:
         cache = getattr(cached_board_score, "_cache", None)
         if cache is None:
-            cache = {}
+            cache = LRUCache(MAX_CACHE_SIZE)
             cached_board_score._cache = cache
 
     key = board_hash(board_tuple, bonus_tuple)
@@ -52,13 +71,6 @@ def cached_board_score(board_tuple, bonus_tuple, cache=None):
     _actual_misses += 1
     val = compute_board_score(board_tuple, bonus_tuple)
     cache[key] = val
-
-    # Simple trim. Replace with OrderedDict for true LRU if desired.
-    if len(cache) > MAX_CACHE_SIZE:
-        to_trim = len(cache) - MAX_CACHE_SIZE
-        for _ in range(to_trim):
-            cache.pop(next(iter(cache)))
-
     return val
 
 

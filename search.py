@@ -635,7 +635,9 @@ def parallel_first_beam(
     best_results = []
     seen_best_boards = set()
 
-    with concurrent.futures.ProcessPoolExecutor() as executor:
+    import os
+    cpu_count = os.cpu_count() or 4
+    with concurrent.futures.ProcessPoolExecutor(max_workers=cpu_count) as executor:
         future_to_info = {
             executor.submit(
                 explore_alternatives,
@@ -654,7 +656,7 @@ def parallel_first_beam(
                 use_transpo,
                 transpo_cap,
             ): (time.time(), play, i)
-            for i, play in enumerate(first_choices)
+            for i, play in enumerate(first_choices[:cpu_count])
         }
         for future in concurrent.futures.as_completed(future_to_info):
             start, play, idx = future_to_info[future]
