@@ -293,7 +293,7 @@ def run_solver():
         if leaderboard_scores:
             high_score = max(leaderboard_scores)
             highscore_entries = [entry for entry in leaderboard_data.get("scores", []) if entry["score"] == high_score]
-            print(Fore.LIGHTYELLOW_EX + f"\nCurrent High Score Board Layout (Score: {high_score}):")
+            print(Fore.LIGHTYELLOW_EX + f"\nCurrent High Score Board Layout (Score: {high_score}, Total Scores: {len(leaderboard_scores)}):")
             from board import leaderboard_gamestate_to_board, print_board as print_board_func
 
             board_hs = bonus_hs = None
@@ -473,6 +473,10 @@ def run_solver():
             f"Final board score: {cached_board_score(board_to_tuple(board_after), board_to_tuple(original_bonus))}"
         )
         print("-" * 40)
+
+        # Use already-fetched leaderboard_data for comparison
+        if 'leaderboard_data' in locals() and leaderboard_data:
+            print_leaderboard_summary(score, leaderboard_data)
         return
 
     if not improvement_done:
