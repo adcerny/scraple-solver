@@ -663,6 +663,8 @@ def parallel_first_beam(
             _, word, direction, row, col = play
             status_msg = ""
             print_board_flag = False
+            msg_color = Fore.LIGHTBLUE_EX  # Default color
+
             if moves is not None:
                 results.append((score, board_result, moves))
                 board_key = tuple(tuple(r) for r in board_result)
@@ -672,26 +674,28 @@ def parallel_first_beam(
                     seen_best_boards = {board_key}
                     status_msg = " New High Score!"
                     print_board_flag = True
+                    msg_color = Fore.GREEN
                 elif score == best_total:
                     if board_key not in seen_best_boards:
                         seen_best_boards.add(board_key)
                         status_msg = " Equal high score."
                         print_board_flag = True
                         best_results.append((score, board_result, moves))
-            msg_color = Fore.GREEN if status_msg else Fore.LIGHTBLUE_EX
-            duration_msg = f" (duration: {elapsed:.3f}s)" if VERBOSE else ""
-            log_with_time(
-                f"Game {idx+1}/{len(first_choices)}: {word} at {row},{col},{direction.value} → final score: {score}{duration_msg}{status_msg}",
-                color=msg_color,
-            )
-            if print_board_flag:
-                with PRINT_LOCK:
-                    if status_msg.strip() == "New High Score!":
-                        print(f"\n{Fore.GREEN}New best score found: {score}{Style.RESET_ALL}", flush=True)
-                    else:
-                        print(f"\n{Fore.MAGENTA}Equal best score found: {score}{Style.RESET_ALL}", flush=True)
-                print_board(board_result, original_bonus)
-            vlog(f"beam_from_first {idx+1}", start)
+                        msg_color = Fore.MAGENTA  # Magenta for equal score
+
+                duration_msg = f" (duration: {elapsed:.3f}s)" if VERBOSE else ""
+                log_with_time(
+                    f"Game {idx+1}/{len(first_choices)}: {word} at {row},{col},{direction.value} → final score: {score}{duration_msg}{status_msg}",
+                    color=msg_color,
+                )
+                if print_board_flag:
+                    with PRINT_LOCK:
+                        if status_msg.strip() == "New High Score!":
+                            print(f"\n{Fore.GREEN}New best score found: {score}{Style.RESET_ALL}", flush=True)
+                        else:
+                            print(f"\n{Fore.MAGENTA}Equal best score found: {score}{Style.RESET_ALL}", flush=True)
+                    print_board(board_result, original_bonus)
+                vlog(f"beam_from_first {idx+1}", start)
 
     if not best_results:
         return 0, []
