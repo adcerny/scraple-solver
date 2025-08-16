@@ -1,0 +1,87 @@
+{
+  "puzzle": {
+    "letters": [
+      {
+        "letter": "S",
+        "points": 1
+      },
+      {
+        "letter": "I",
+        "points": 1
+      },
+      {
+        "letter": "T",
+        "points": 1
+      },
+      {
+        "letter": "T",
+        "points": 1
+      },
+      {
+        "letter": "Y",
+        "points": 4
+      },
+      {
+        "letter": "W",
+        "points": 4
+      },
+      {
+        "letter": "I",
+        "points": 1
+      },
+      {
+        "letter": "M",
+        "points": 3
+      },
+      {
+        "letter": "I",
+        "points": 1
+      },
+      {
+        "letter": "R",
+        "points": 1
+      },
+      {
+        "letter": "I",
+        "points": 1
+      },
+      {
+        "letter": "I",
+        "points": 1
+      },
+      {
+        "letter": "E",
+        "points": 1
+      },
+      {
+        "letter": "I",
+        "points": 1
+      },
+      {
+        "letter": "D",
+        "points": 2
+      },
+      {
+        "letter": "U",
+        "points": 1
+      },
+      {
+        "letter": "W",
+        "points": 4
+      },
+      {
+        "letter": "P",
+        "points": 3
+      }
+    ],
+    "bonusTilePositions": {
+      "DOUBLE_LETTER": "DL",
+      "TRIPLE_LETTER": "TL",
+      "DOUBLE_WORD": "DW",
+      "TRIPLE_WORD": "TW"
+    },
+    "date": "2025-08-15",
+    "displayDate": "August 15, 2025"
+  },
+  "human_best": {}
+}
