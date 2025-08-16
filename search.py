@@ -607,6 +607,7 @@ def parallel_first_beam(
     gamma_diversity=GAMMA_DIVERSITY_DEFAULT,
     use_transpo=False,
     transpo_cap=200000,
+    num_threads=None,
 ):
     """Search game states starting from multiple first moves in parallel."""
     rack_count = Counter(rack)
@@ -635,7 +636,7 @@ def parallel_first_beam(
     best_results = []
     seen_best_boards = set()
 
-    with concurrent.futures.ProcessPoolExecutor() as executor:
+    with concurrent.futures.ProcessPoolExecutor(max_workers=num_threads) as executor:
         future_to_info = {
             executor.submit(
                 explore_alternatives,

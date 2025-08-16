@@ -11,6 +11,7 @@ from score_cache import board_to_tuple, cached_board_score
 import json
 from datetime import datetime
 import concurrent.futures
+import sys
 
 from search import parallel_first_beam, beam_from_first
 
@@ -166,11 +167,16 @@ def print_leaderboard_summary(best_score, leaderboard_data):
         print("Could not parse leaderboard scores.")
 
 
-def run_solver():
+def run_solver(argv=None):
+    if argv is None:
+        argv = sys.argv[1:]
     parser = argparse.ArgumentParser(description="ScrapleSolver")
     parser.add_argument("--beam-width", type=int, default=10, help="Beam width for the search (default: 10)")
     parser.add_argument(
         "--first-moves", type=int, default=None, help="Number of opening moves to explore (default: beam width)"
+    )
+    parser.add_argument(
+        "--num-threads", type=int, default=None, help="Number of parallel threads/processes to use (default: number of CPU cores)"
     )
     parser.add_argument("--depth", type=int, default=20, help="Maximum number of moves to search (default: 20)")
     parser.add_argument("--verbose", action="store_true", help="Enable verbose logging")
@@ -193,7 +199,7 @@ def run_solver():
     )
     parser.add_argument("--num-games", type=int, default=50, help="Number of games to play in parallel (default: 50)")
     parser.add_argument("--improve-leaderboard", action="store_true", help="Start search from the current leaderboard high-score board")
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
     beam_width = args.beam_width
     first_moves = args.first_moves
@@ -206,6 +212,10 @@ def run_solver():
     gamma_diversity = GAMMA_DIVERSITY
     use_transpo = USE_TRANSPO
     transpo_cap = TRANSPO_CAP
+    num_threads = args.num_threads
+    if num_threads is None:
+        num_threads = os.cpu_count()
+        print(f"[INFO] Using default number of threads: {num_threads} (number of CPU cores detected)")
 
     utils.start_time = time.time()
     utils.VERBOSE = args.verbose
@@ -357,6 +367,7 @@ def run_solver():
                         gamma_diversity=gamma_diversity,
                         use_transpo=use_transpo,
                         transpo_cap=transpo_cap,
+                        num_threads=num_threads,
                     )
                     improved = True if new_score > high_score else improved
                     if improved:
@@ -380,6 +391,7 @@ def run_solver():
                         gamma_diversity=gamma_diversity,
                         use_transpo=use_transpo,
                         transpo_cap=transpo_cap,
+                        num_threads=num_threads,
                     )
                     improvement_done = True
 
@@ -496,6 +508,7 @@ def run_solver():
             gamma_diversity=gamma_diversity,
             use_transpo=use_transpo,
             transpo_cap=transpo_cap,
+            num_threads=num_threads,
         )
 
     if not best_results:
