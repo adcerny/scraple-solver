@@ -192,6 +192,12 @@ def run_solver():
         help='Specify position and direction for start word as "row,col,dir" (e.g. "7,7,A"). Only valid if --start-word is provided.',
     )
     parser.add_argument("--num-games", type=int, default=50, help="Number of games to play in parallel (default: 50)")
+    parser.add_argument(
+        "--num-threads",
+        type=int,
+        default=None,
+        help="Number of CPU threads/processes to use (default: number of CPU cores)",
+    )
     parser.add_argument("--improve-leaderboard", action="store_true", help="Start search from the current leaderboard high-score board")
     args = parser.parse_args()
 
@@ -199,6 +205,11 @@ def run_solver():
     first_moves = args.first_moves
     max_moves = args.depth
     num_games = args.num_games
+    # Determine number of threads/processes to use
+    cpu_cores = os.cpu_count()
+    num_threads = args.num_threads if args.num_threads is not None else cpu_cores
+    print(f"Detected CPU cores: {cpu_cores}")
+    print(f"Using threads/processes: {num_threads}")
 
     # Fixed heuristics & transpo (no CLI toggles)
     alpha_premium = ALPHA_PREMIUM
@@ -496,6 +507,7 @@ def run_solver():
             gamma_diversity=gamma_diversity,
             use_transpo=use_transpo,
             transpo_cap=transpo_cap,
+            num_threads=num_threads,
         )
 
     if not best_results:
